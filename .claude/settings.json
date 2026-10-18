@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run infostation:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv sync:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(ffprobe:*)",
+      "Bash(npx tsc:*)",
+      "Bash(tail:*)",
+      "Bash(ls:*)",
+      "Read",
+      "Edit(src/**)",
+      "Edit(video/src/**)",
+      "Edit(tests/**)"
+    ]
+  }
+}

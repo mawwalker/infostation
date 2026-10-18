@@ -1,0 +1,23 @@
+[project]
+name = "voicelab"
+version = "0.1.0"
+description = "Design synthetic narrator voices (Qwen3-TTS VoiceDesign) used as IndexTTS speaker prompts"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "qwen-tts==0.1.1",
+  "torch==2.8.*",
+  "torchaudio==2.8.*",
+  "soundfile",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

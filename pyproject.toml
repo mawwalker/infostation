@@ -1,0 +1,41 @@
+[project]
+name = "infostation"
+version = "0.1.0"
+description = "Automated market intelligence station: collect, analyze, script and render bilingual finance videos"
+readme = "README.md"
+authors = [
+    { name = "mawwalker", email = "dengshima@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "curl-cffi>=0.16.3",
+    "duckdb>=1.5.6",
+    "edge-tts>=7.3.1",
+    "exchange-calendars>=4.13.2",
+    "faster-whisper>=1.2.1",
+    "feedparser>=6.0.14",
+    "jieba>=0.42.1",
+    "jsonschema>=4.26.0",
+    "matplotlib>=3.11.2",
+    "pandas>=3.0.6",
+    "pillow>=13.0.0",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+    "soundfile>=0.14.0",
+    "trafilatura>=2.3.1",
+    "typer>=0.27.3",
+    "yfinance>=1.7.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+infostation = "infostation.cli:main"

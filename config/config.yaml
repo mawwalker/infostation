@@ -1,0 +1,140 @@
+# InfoStation 主配置。密钥类放 .env，不要写在这里。
+
+brand:
+  name_zh: "美股情报站"
+  name_en: "Market Intel Daily"
+  handle: "@your_handle"          # 显示在视频角标和推文卡片上
+
+languages: [zh, en]
+
+# 运行时段：recap=盘后复盘（数据最完整，推荐主力），premarket=盘前早报
+# auto：美东 16:15 之后跑 recap；美东 00:00–09:30 跑 premarket；非交易日跑最近一个交易日的 recap
+session: auto
+
+llm:
+  cli: agy
+  # 按顺序尝试；每个模型重试 `retries` 次仍失败才换下一个。`agy models` 可查看可用模型
+  # 需要兜底时可在后面追加，例如 [gemini-4-argon-medium, gemini-4-argon-high]
+  models: [gemini-4-argon-medium]
+  timeout_sec: 600
+  retries: 2
+  parallel: true                  # 中英文稿并行调用
+
+universe:
+  # 核心观察池：大盘权重 + 热门成长股，每天必扫
+  watchlist: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AVGO, AMD, NFLX, ORCL, CRM, ADBE, INTC, MU, QCOM, ARM, TSM, ASML, SMCI,
+              PLTR, COIN, MSTR, HOOD, SOFI, UBER, SHOP, SNOW, CRWD, PANW, NET, DDOG, ABNB, RBLX, RIVN, LCID, NIO, BABA, PDD, JD,
+              JPM, BAC, GS, MS, WFC, C, V, MA, PYPL, BRK-B, UNH, LLY, NVO, JNJ, PFE, MRK, XOM, CVX, WMT, COST, HD, DIS, BA, CAT, GE]
+  apewisdom_top: 40               # 散户热度榜前 N 名并入宇宙
+  yahoo_screens: [day_gainers, day_losers, most_actives]
+  screen_count: 15
+  min_market_cap: 2.0e9           # 过滤小市值/仙股，避免被拉盘股带节奏
+  ticker_blacklist: [A, IT, ALL, ON, DD, YOLO, CEO, USA, AI, EV, FOR, ARE, NOW, ONE, GO, SO, BE, CAN, OPEN, RUN, NEXT, REAL, LOVE, FUN]
+
+market_board:
+  # 用指数本身（不是 ETF 价格），否则“标普500 763”会误导观众
+  - {symbol: ^GSPC,     name_zh: "标普500",   name_en: "S&P 500"}
+  - {symbol: ^NDX,      name_zh: "纳指100",   name_en: "Nasdaq 100"}
+  - {symbol: ^DJI,      name_zh: "道指",      name_en: "Dow"}
+  - {symbol: ^RUT,      name_zh: "罗素2000",  name_en: "Russell 2000"}
+  - {symbol: ^SOX,      name_zh: "费城半导体", name_en: "Semis (SOX)"}
+  - {symbol: ^VIX,      name_zh: "VIX恐慌指数", name_en: "VIX"}
+  - {symbol: ^TNX,      name_zh: "10年美债",  name_en: "10Y Yield", unit: yield}
+  - {symbol: DX-Y.NYB,  name_zh: "美元指数",  name_en: "Dollar Index"}
+  - {symbol: GC=F,      name_zh: "黄金",      name_en: "Gold"}
+  - {symbol: CL=F,      name_zh: "原油",      name_en: "Crude Oil"}
+  # BTC 不放这里：股市按收盘价算日涨跌，加密是 24h 滚动，混在一起会出现两个不同的 BTC 涨跌幅
+
+futures:   # 盘前早报用
+  - {symbol: ES=F, name_zh: "标普期货", name_en: "S&P Futures"}
+  - {symbol: NQ=F, name_zh: "纳指期货", name_en: "Nasdaq Futures"}
+  - {symbol: YM=F, name_zh: "道指期货", name_en: "Dow Futures"}
+
+sectors:
+  - {symbol: XLK,  name_zh: "科技",     name_en: "Tech"}
+  - {symbol: XLC,  name_zh: "通信",     name_en: "Comm"}
+  - {symbol: XLY,  name_zh: "可选消费", name_en: "Discretionary"}
+  - {symbol: XLP,  name_zh: "必需消费", name_en: "Staples"}
+  - {symbol: XLF,  name_zh: "金融",     name_en: "Financials"}
+  - {symbol: XLV,  name_zh: "医疗",     name_en: "Health"}
+  - {symbol: XLI,  name_zh: "工业",     name_en: "Industrials"}
+  - {symbol: XLE,  name_zh: "能源",     name_en: "Energy"}
+  - {symbol: XLB,  name_zh: "材料",     name_en: "Materials"}
+  - {symbol: XLRE, name_zh: "地产",     name_en: "Real Estate"}
+  - {symbol: XLU,  name_zh: "公用事业", name_en: "Utilities"}
+
+crypto:
+  symbols: [BTC, ETH, SOL, XRP, BNB, DOGE]
+  funding_symbols: [BTC, ETH, SOL]
+
+screening:
+  candidates: 18                  # 漏斗第二层：进入深挖的候选数
+  stories: 3                      # 最终主线数
+  cooldown_days: 2                # 最近 N 天讲过的股票降权（避免重复内容）
+  sec_lookback_days: 5
+  movers_min_market_cap: 1.0e10   # 异动榜只展示百亿美元以上公司（观众认识的名字）
+
+news:
+  per_ticker: 8
+  market_feeds:
+    - https://www.cnbc.com/id/100003114/device/rss/rss.html     # CNBC Top News
+    - https://www.cnbc.com/id/15839069/device/rss/rss.html      # CNBC Investing
+    - https://feeds.content.dowjones.io/public/rss/mw_topstories # MarketWatch
+    - https://www.coindesk.com/arc/outboundfeeds/rss/
+    - https://cointelegraph.com/rss
+
+calendar:
+  earnings_days_ahead: 3
+  macro_days_ahead: 5
+  earnings_min_market_cap: 2.0e10
+  macro_impact: [High, Medium]
+
+tts:
+  # indextts = 本地 IndexTTS-2.5（自然度高，需要 GPU）；edge = 微软在线 TTS（兜底，AI 味较重）
+  provider: indextts
+  indextts:
+    repo: ~/workspace/audio/index-tts
+    bf16: true
+    emo_alpha: 1.0
+  # 说话人参考音频（10–20 秒干净人声）。默认是用 Qwen3-TTS VoiceDesign 生成的虚构音色，不属于任何真人。
+  # 换音色：试听 voices/audition/ 下的样本，或放入你自己的录音，改这里的路径即可。
+  voices:
+    zh: voices/zh_narrator.wav
+    en: voices/en_narrator.wav
+  sentence_pause: 0.3            # 句间停顿（秒）
+  tempo:                         # 变速（保持音高）；IndexTTS 英文偏慢，1.07 基本听不出变化
+    zh: 1.0
+    en: 1.07
+  edge_voices:
+    zh: zh-CN-YunxiNeural
+    en: en-US-AndrewNeural
+  edge_rate:
+    zh: "+8%"
+    en: "+4%"
+
+captions:
+  align: whisper                 # whisper = 用 Whisper 词级时间戳对齐字幕断点；none = 按语速估算
+  whisper_model: small
+
+video:
+  fps: 30                         # 想要 60fps 改这里（渲染时间约翻倍）
+  width: 1920
+  height: 1080
+  concurrency: 16                 # Remotion 并行渲染的 Chrome 标签数（约等于 CPU 线程数的一半）
+  bgm_volume: 0.07                # assets/music/ 下有 mp3 时自动使用
+  # 涨跌配色：中文版按 A 股习惯红涨绿跌，英文版绿涨红跌
+  up_down:
+    zh: {up: "#f0454f", down: "#16c784"}
+    en: {up: "#16c784", down: "#f0454f"}
+
+comfy:
+  enabled: true                   # 用局域网 ComfyUI 生成缩略图背景；失败自动降级为纯色渐变
+  url: http://192.168.0.111:8090
+  model: krea2
+  timeout_sec: 180
+
+factcheck:
+  max_rewrites: 1
+  block_on_fail: false            # true=数字核对不过就不渲染；false=照常渲染并在 review.md 标红
+
+retention_days: 30                # runs/ 下中间产物保留天数（DuckDB 历史库永久保留）

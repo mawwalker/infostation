@@ -1,0 +1,10 @@
+[Unit]
+Description=Run InfoStation after the US close (Beijing 06:30, Tue–Sat)
+
+[Timer]
+# 06:30 Beijing = 18:30 ET (EDT) / 17:30 ET (EST): always after the 16:00 ET close.
+OnCalendar=Tue..Sat 06:30 Asia/Shanghai
+Persistent=true
+
+[Install]
+WantedBy=timers.target

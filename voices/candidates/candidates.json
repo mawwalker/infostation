@@ -1,0 +1,86 @@
+{
+ "zh_m_anchor_t1.wav": {
+  "language": "Chinese",
+  "instruct": "35岁左右的男性财经节目主持人，普通话标准，声音低沉、有磁性、略带沙哑的质感，吐字清晰。语气沉稳自信，像在和观众面对面聊天，自然口语化，有轻重缓急和自然的停顿，不是播音腔，不夸张。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 15.7
+ },
+ "zh_m_anchor_t2.wav": {
+  "language": "Chinese",
+  "instruct": "35岁左右的男性财经节目主持人，普通话标准，声音低沉、有磁性、略带沙哑的质感，吐字清晰。语气沉稳自信，像在和观众面对面聊天，自然口语化，有轻重缓急和自然的停顿，不是播音腔，不夸张。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 15.8
+ },
+ "zh_m_warm_t1.wav": {
+  "language": "Chinese",
+  "instruct": "40岁左右的男性资深财经评论员，声音浑厚温和、共鸣饱满，语速从容偏慢，娓娓道来，像深夜财经节目里经验丰富的老朋友在分析市场，亲切可信，带一点点笑意。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 18.7
+ },
+ "zh_m_warm_t2.wav": {
+  "language": "Chinese",
+  "instruct": "40岁左右的男性资深财经评论员，声音浑厚温和、共鸣饱满，语速从容偏慢，娓娓道来，像深夜财经节目里经验丰富的老朋友在分析市场，亲切可信，带一点点笑意。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 15.8
+ },
+ "zh_f_anchor_t1.wav": {
+  "language": "Chinese",
+  "instruct": "30岁左右的女性财经主持人，普通话标准，声音清亮温暖、干净利落，语速适中偏快，专业但不刻板，语气自然亲切，像在给朋友讲今天的市场，有自然的节奏起伏。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 14.2
+ },
+ "zh_f_anchor_t2.wav": {
+  "language": "Chinese",
+  "instruct": "30岁左右的女性财经主持人，普通话标准，声音清亮温暖、干净利落，语速适中偏快，专业但不刻板，语气自然亲切，像在给朋友讲今天的市场，有自然的节奏起伏。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 13.7
+ },
+ "zh_m_young_t1.wav": {
+  "language": "Chinese",
+  "instruct": "28岁左右的男性科技财经博主，声音明亮有活力、略带颗粒感，语速轻快，表达自然随性、有感染力，像在录一期很受欢迎的播客，口语化，偶尔有轻微的强调。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 15.1
+ },
+ "zh_m_young_t2.wav": {
+  "language": "Chinese",
+  "instruct": "28岁左右的男性科技财经博主，声音明亮有活力、略带颗粒感，语速轻快，表达自然随性、有感染力，像在录一期很受欢迎的播客，口语化，偶尔有轻微的强调。",
+  "text": "大家好，欢迎收看今天的节目。今晚美股的主线非常清楚：资金在撤离高估值的科技股，转而涌向能源和防御板块。接下来我们一条一条拆开来看，到底发生了什么，又意味着什么。",
+  "seconds": 15.1
+ },
+ "en_m_host_t1.wav": {
+  "language": "English",
+  "instruct": "A male American financial show host in his mid-30s. Warm, slightly husky baritone, clear diction. Confident and conversational, relaxed but brisk pace, natural pauses and emphasis, like a smart podcast host talking to a friend, not a formal announcer.",
+  "text": "Hi everyone, and welcome back. Tonight the story on Wall Street is pretty clear: money is rotating out of expensive tech and into energy and defensive names. Let's walk through what happened, and what it might mean.",
+  "seconds": 13.4
+ },
+ "en_m_host_t2.wav": {
+  "language": "English",
+  "instruct": "A male American financial show host in his mid-30s. Warm, slightly husky baritone, clear diction. Confident and conversational, relaxed but brisk pace, natural pauses and emphasis, like a smart podcast host talking to a friend, not a formal announcer.",
+  "text": "Hi everyone, and welcome back. Tonight the story on Wall Street is pretty clear: money is rotating out of expensive tech and into energy and defensive names. Let's walk through what happened, and what it might mean.",
+  "seconds": 13.9
+ },
+ "en_f_reporter_t1.wav": {
+  "language": "English",
+  "instruct": "A female American business reporter around 30. Bright, warm mid-range voice, crisp articulation, friendly and composed, natural conversational rhythm with subtle emphasis, professional but not stiff.",
+  "text": "Hi everyone, and welcome back. Tonight the story on Wall Street is pretty clear: money is rotating out of expensive tech and into energy and defensive names. Let's walk through what happened, and what it might mean.",
+  "seconds": 13.1
+ },
+ "en_f_reporter_t2.wav": {
+  "language": "English",
+  "instruct": "A female American business reporter around 30. Bright, warm mid-range voice, crisp articulation, friendly and composed, natural conversational rhythm with subtle emphasis, professional but not stiff.",
+  "text": "Hi everyone, and welcome back. Tonight the story on Wall Street is pretty clear: money is rotating out of expensive tech and into energy and defensive names. Let's walk through what happened, and what it might mean.",
+  "seconds": 12.5
+ },
+ "en_m_analyst_t1.wav": {
+  "language": "English",
+  "instruct": "A male market analyst in his 40s with a gentle British accent. Calm, measured, rich low voice, thoughtful pacing, authoritative yet approachable, like a seasoned commentator on a late-night markets show.",
+  "text": "Hi everyone, and welcome back. Tonight the story on Wall Street is pretty clear: money is rotating out of expensive tech and into energy and defensive names. Let's walk through what happened, and what it might mean.",
+  "seconds": 15.4
+ },
+ "en_m_analyst_t2.wav": {
+  "language": "English",
+  "instruct": "A male market analyst in his 40s with a gentle British accent. Calm, measured, rich low voice, thoughtful pacing, authoritative yet approachable, like a seasoned commentator on a late-night markets show.",
+  "text": "Hi everyone, and welcome back. Tonight the story on Wall Street is pretty clear: money is rotating out of expensive tech and into energy and defensive names. Let's walk through what happened, and what it might mean.",
+  "seconds": 12.2
+ }
+}
