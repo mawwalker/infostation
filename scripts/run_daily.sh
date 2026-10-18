@@ -1,17 +1,51 @@
 #!/usr/bin/env bash
 # Daily entry point for cron / systemd. Safe to run several times a day: completed runs are skipped.
-#   scripts/run_daily.sh                 # session decided by config (auto)
-#   scripts/run_daily.sh --session recap
-set -euo pipefail
+#   scripts/run_daily.sh                     # session decided by config (auto)
+#   scripts/run_daily.sh --session premarket
+#
+# Optional settings (in .env):
+#   AUTO_FIX=1             on failure, let agy diagnose/fix per the infostation-daily skill, then resume once
+#   NOTIFY_SCRIPT=/path    executable called as: NOTIFY_SCRIPT <ok|failed> <message>  (e.g. send to Telegram)
+set -uo pipefail
 cd "$(dirname "$0")/.."
-export PATH="$HOME/.local/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | tail -1)/bin:/usr/local/bin:/usr/bin:$PATH"
+NODE_BIN="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1)"
+export PATH="$HOME/.local/bin:${NODE_BIN:+$NODE_BIN:}/usr/local/bin:/usr/bin:/bin:$PATH"
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+
 mkdir -p data/logs
-log="data/logs/$(date +%F_%H%M).log"
-if uv run infostation run "$@" >"$log" 2>&1; then
-  echo "ok: $log"
-else
-  code=$?
-  echo "FAILED (exit $code): $log" >&2
-  tail -30 "$log" >&2
-  exit $code
+stamp="$(date +%F_%H%M)"
+log="data/logs/${stamp}.log"
+
+notify() {  # $1 = ok|failed, $2 = message
+  command -v notify-send >/dev/null 2>&1 && notify-send -a InfoStation "InfoStation: $1" "$2" 2>/dev/null || true
+  if [ -n "${NOTIFY_SCRIPT:-}" ] && [ -x "${NOTIFY_SCRIPT}" ]; then "${NOTIFY_SCRIPT}" "$1" "$2" || true; fi
+}
+
+run() { uv run infostation run "$@" >>"$log" 2>&1; }
+
+if run "$@"; then
+  out="$(grep -o 'done → .*' "$log" | tail -1)"
+  echo "ok: $log"; notify ok "${out:-run complete}"
+  exit 0
 fi
+
+echo "FAILED: $log" >&2
+tail -30 "$log" >&2
+
+if [ "${AUTO_FIX:-0}" = "1" ] && command -v agy >/dev/null 2>&1; then
+  fixlog="data/logs/${stamp}_autofix.log"
+  echo "AUTO_FIX: asking agy to diagnose (log: $fixlog)" >&2
+  agy -p "InfoStation 的定时任务失败了，失败日志在 $log。请按 .agents/skills/infostation-daily/SKILL.md 的流程排查：
+读日志和最新的 runs/*/run.log、state.json，运行 uv run infostation doctor 找原因；如果是代码或采集器的问题就修复并运行
+uv run pytest -q 确认；如果是外部原因（网络、数据源暂时不可用、显卡被占用），不要改代码。
+不要删除 runs/ 或 data/，不要上传或发布任何内容，不要修改 .env。最后用三五句话说明原因和你做了什么。" \
+    --model "${AUTO_FIX_MODEL:-gemini-4-argon-medium}" --dangerously-skip-permissions --print-timeout 2400s >"$fixlog" 2>&1
+  echo "AUTO_FIX: retrying" >>"$log"
+  if run "$@"; then
+    echo "ok after auto-fix: $log"; notify ok "recovered after auto-fix (see $fixlog)"
+    exit 0
+  fi
+fi
+
+notify failed "see $log"
+exit 1

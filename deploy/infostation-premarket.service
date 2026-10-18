@@ -1,0 +1,10 @@
+[Unit]
+Description=InfoStation pre-market briefing
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/workspace/auto_information_state
+ExecStart=%h/workspace/auto_information_state/scripts/run_daily.sh --session premarket
+TimeoutStartSec=3h
