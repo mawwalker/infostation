@@ -22,6 +22,9 @@ Do two jobs. Use ONLY the data below — do not use outside knowledge about pric
    For each story give the angle (what the segment argues), the evidence it rests on (refer to data fields), and a
    one-sentence hook in Chinese and English.
 
+`after_hours` lists companies that reported after today's close (EPS and after-hours move); the show covers
+them in their own segment, so pick stories from the candidates, but the market theme may mention them.
+
 Also write the day's market theme in one sentence (Chinese and English).
 
 Tone for hooks and theme: factual and specific, no exclamation marks, no sensational words (血洗, 暗藏杀机, 暴利, 崩盘,

@@ -37,18 +37,21 @@ def run(
     langs: Optional[str] = typer.Option(None, help="comma-separated languages, e.g. zh or zh,en"),
     verbose: bool = typer.Option(False, "-v"),
 ) -> None:
-    """Collect → screen → edit → write → voice → visuals → render → package."""
+    """recap: collect → screen → edit → write → voice → visuals → render → package.
+    premarket (X thread + cards only): collect → write → render → package."""
     from .market_calendar import plan_session
-    from .pipeline import STEPS, Run, cleanup_old_runs
+    from .pipeline import cleanup_old_runs
+    from .premarket import run_class
 
     s = load_settings()
     if langs:
         s.raw["languages"] = [x.strip() for x in langs.split(",") if x.strip()]
-    for st in (start, only):
-        if st and st not in STEPS:
-            raise typer.BadParameter(f"unknown step {st}; choose from {STEPS}")
     plan = plan_session(session or s.get("session", "auto"), target=date.fromisoformat(on) if on else None)
-    r = Run(s, plan)
+    cls = run_class(plan.session)
+    for st in (start, only):
+        if st and st not in cls.STEPS:
+            raise typer.BadParameter(f"unknown step {st} for {plan.session}; choose from {cls.STEPS}")
+    r = cls(s, plan)
     _setup_logging(r.dir, verbose)
     logging.getLogger("infostation").info("run %s (now ET %s)", plan.run_id, plan.now_et.strftime("%Y-%m-%d %H:%M"))
     out = r.execute(start=start, only=only, force=force)

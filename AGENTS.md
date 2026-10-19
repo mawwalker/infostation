@@ -16,8 +16,13 @@ uv run infostation studio <run_id> --lang zh   # Remotion Studio on a run's prop
 uv run pytest -q
 ```
 
-Steps (each reads/writes `runs/<date>_<session>/`): `collect → screen → edit → write → voice → visuals → render → package`.
-Output: `runs/<id>/upload/{zh,en}/` (video.mp4, thumbnail.png, captions.srt, youtube.md, x_thread.md, cards/) and `runs/<id>/review.md`.
+Two sessions per trading day, chosen by New York time (`market_calendar.plan_session`, `session: auto`):
+- `recap` (after 16:15 ET; timer 17:00 ET): `collect → screen → edit → write → voice → visuals → render → package`.
+  Output `runs/<date>_recap/upload/{zh,en}/` (video.mp4, thumbnail.png, captions.srt, youtube.md, x_thread.md, cards/).
+  Includes an "after-hours earnings" scene when companies reported after the close (`Run._after_hours`).
+- `premarket` (before 09:30 ET; timer 07:30 ET): X thread + cards only, `src/infostation/premarket.py`:
+  `collect → write → render → package` → `runs/<date>_premarket/upload/{zh,en}/` (x_thread.md, cards/).
+Both write `runs/<id>/review.md`.
 
 ## Layout
 
@@ -32,6 +37,7 @@ Output: `runs/<id>/upload/{zh,en}/` (video.mp4, thumbnail.png, captions.srt, you
 - `tools/voicelab/` — Qwen3-TTS VoiceDesign env to invent new synthetic narrator voices (never clone real people)
 - `src/infostation/media/` (rest) — ComfyUI background, Remotion props + render
 - `video/` — Remotion templates (TypeScript). Python precomputes all numbers; templates only lay out/animate
+- `src/infostation/timefmt.py` — every viewer-facing time: New York first, then Los Angeles / Beijing (`time_zones` in config)
 - `data/market_memory.duckdb` — history store, grows every run (prices, mentions, sentiment, filings, insider trades)
 
 ## Rules when changing things
@@ -40,6 +46,8 @@ Output: `runs/<id>/upload/{zh,en}/` (video.mp4, thumbnail.png, captions.srt, you
 - A data source failing must not stop the pipeline: catch `SourceError`, log, record health via `Run.health()`.
 - Respect source limits: SEC needs `SEC_USER_AGENT` with an email and ≤10 req/s (throttled in `http.py`).
 - Keep prompts' hard rules (no buy/sell advice, attribute news, digits not words).
+- Times: schedule and reason in New York time. Never let the LLM convert time zones; give it preformatted
+  `time_zh` / `time_en` / `spoken_*` strings from `timefmt`. After-hours / pre-market quotes must be labelled as such.
 - Captions: never dump raw text; any change to line breaking must keep `tests/test_captions.py` passing.
 - huggingface.co is DNS-poisoned on this network: download models via ModelScope / hf-mirror (`scripts/setup_tts.sh`).
 - After editing `video/src`, run `cd video && npx tsc --noEmit`; after Python changes run `uv run pytest -q`.

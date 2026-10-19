@@ -13,6 +13,10 @@ rendered from the data by code, so your job is the spoken narration plus short o
    at length. Do not state anything as fact that DATA does not support; uncertain causes are "possibly" / "likely".
 5. Refer to companies by name, not by ticker spelling. {{NAME_RULE}}
 6. Output narration for exactly the scenes listed below, in the same order, with the same `id` and `type`.
+7. After-hours and pre-market prices are thin and can reverse by the open: always say "in after-hours trading" /
+   "盘后交易中" (or "pre-market" / "盘前"), never present them as the closing price. Earnings beats/misses are judged
+   only from eps_actual vs eps_estimate in DATA; do not invent revenue or guidance figures that DATA does not contain.
+8. All clock times are New York (Eastern) time unless DATA gives another zone; copy them from DATA's time fields.
 
 ## Style
 {{STYLE}}

@@ -1,9 +1,9 @@
 [Unit]
-Description=Optional: InfoStation pre-market briefing (Beijing 19:00, Mon–Fri)
+Description=InfoStation pre-market X brief (07:30 New York time, Mon–Fri)
 
 [Timer]
-# 19:00 Beijing = 07:00 ET (EDT) / 06:00 ET (EST): before the 09:30 ET open.
-OnCalendar=Mon..Fri 19:00 Asia/Shanghai
+# 07:30 ET = 04:30 Los Angeles; ready in ~5 minutes, post before the 09:30 ET open.
+OnCalendar=Mon..Fri 07:30 America/New_York
 Persistent=true
 Unit=infostation-premarket.service
 

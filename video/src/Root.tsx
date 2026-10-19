@@ -53,6 +53,7 @@ const Card: React.FC<CardProps> = ({briefing: p, sceneId}) => {
         <div style={{position: 'absolute', left: 72, right: 72, bottom: 40, display: 'flex', justifyContent: 'space-between',
           fontSize: 24, color: C.faint}}>
           <span>{p.brand.handle}</span>
+          {p.footnote ? <span>{p.footnote}</span> : null}
           <span>{p.labels.nfa}</span>
         </div>
       </AbsoluteFill>

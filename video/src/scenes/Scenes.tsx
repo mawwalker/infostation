@@ -277,6 +277,64 @@ const Crypto: React.FC<Ctx & {s: Extract<Scene, {type: 'crypto'}>}> = ({p, s}) =
   );
 };
 
+// ---------------- earnings (after hours / pre-market) ----------------
+const Earnings: React.FC<Ctx & {s: Extract<Scene, {type: 'earnings'}>}> = ({p, s}) => {
+  const t = useT();
+  const rows = s.data.rows;
+  const maxAbs = Math.max(2, ...rows.map((r) => Math.abs(r.move_pct ?? 0)));
+  const eps = (v: number | null) => (v === null ? '—' : `$${v.toFixed(2)}`);
+  return (
+    <Area style={{flexDirection: 'row', gap: 36}}>
+      <div style={{flex: 1.6, display: 'flex', flexDirection: 'column'}}>
+        <SceneTitle title={s.title} kicker={p.labels.ah} />
+        <Panel delay={6} style={{padding: '10px 28px'}}>
+          <div style={{display: 'flex', gap: 18, height: 44, alignItems: 'center', fontSize: 19, color: C.faint, fontWeight: 600}}>
+            <div style={{width: 300}} />
+            <div style={{width: 250}}>{p.labels.eps} · {p.labels.est}</div>
+            <div style={{width: 150, textAlign: 'right'}}>{p.labels.surprise}</div>
+            <div style={{flex: 1, textAlign: 'right'}}>{s.data.moveLabel}</div>
+          </div>
+          {rows.map((r, i) => {
+            const g = progress(t, 10 + i * 5, 28);
+            const col = r.move_pct === null ? C.sub : toneColor(r.move_pct, p.colors);
+            const sCol = r.surprise_pct === null ? C.sub : toneColor(r.surprise_pct, p.colors);
+            return (
+              <div key={r.symbol} style={{display: 'flex', alignItems: 'center', gap: 18, height: 88, borderTop: `1px solid ${C.panelBorder}`, opacity: Math.min(1, g * 2)}}>
+                <div style={{width: 300}}>
+                  <div style={{fontSize: 34, fontWeight: 800}}>{r.symbol}</div>
+                  <div style={{fontSize: 19, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{r.name}</div>
+                </div>
+                <div style={{width: 250, fontSize: 28, fontVariantNumeric: 'tabular-nums'}}>
+                  <span style={{fontWeight: 800}}>{eps(r.eps)}</span>
+                  <span style={{color: C.sub, fontSize: 22}}> / {eps(r.eps_est)}</span>
+                </div>
+                <div style={{width: 150, textAlign: 'right', fontSize: 28, fontWeight: 700, color: sCol, fontVariantNumeric: 'tabular-nums'}}>
+                  {r.surprise_pct === null ? '—' : fmtPct(r.surprise_pct, 1)}
+                </div>
+                <div style={{flex: 1, display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end'}}>
+                  {r.move_pct !== null ? (
+                    <>
+                      <div style={{width: 200, height: 16, background: 'rgba(255,255,255,0.05)', borderRadius: 8}}>
+                        <div style={{width: `${(Math.abs(r.move_pct) / maxAbs) * 100 * g}%`, height: '100%', borderRadius: 8, background: col}} />
+                      </div>
+                      <div style={{width: 140, textAlign: 'right', fontSize: 34, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums'}}>{fmtPct(r.move_pct)}</div>
+                    </>
+                  ) : <div style={{fontSize: 22, color: C.faint}}>{p.labels.noquote}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </Panel>
+      </div>
+      {s.bullets.length ? (
+        <div style={{flex: 0.6, paddingTop: 110}}>
+          <Panel title={p.labels.keypoints} delay={30}><Bullets items={s.bullets} delay={40} size={27} /></Panel>
+        </div>
+      ) : null}
+    </Area>
+  );
+};
+
 // ---------------- calendar ----------------
 const Calendar: React.FC<Ctx & {s: Extract<Scene, {type: 'calendar'}>}> = ({p, s}) => (
   <Area>
@@ -289,9 +347,9 @@ const Calendar: React.FC<Ctx & {s: Extract<Scene, {type: 'calendar'}>}> = ({p, s
         {!s.data.earnings.length ? <div style={{color: C.sub, fontSize: 24}}>—</div> : null}
       </Panel>
       <Panel title={p.labels.macro} delay={18} style={{flex: 1}}>
-        {s.data.macro.slice(0, 9).map((e, i) => (
-          <Row key={i} delay={24 + i * 3} cells={[e.date.slice(5), e.time, e.event, e.impact]} widths={[90, 90, 0, 100]}
-            accent={e.impact === 'High' ? C.gold : undefined} />
+        {s.data.macro.slice(0, 8).map((e, i) => (
+          <Row key={i} delay={24 + i * 3} cells={[e.date.slice(5), e.time, e.event, e.impact]} widths={[80, e.timeSub ? 250 : 90, 0, 70]}
+            sub={e.timeSub ? {1: e.timeSub} : undefined} accent={e.impact === 'High' || e.impact === '高' ? C.gold : undefined} />
         ))}
         {!s.data.macro.length ? <div style={{color: C.sub, fontSize: 24}}>—</div> : null}
       </Panel>
@@ -299,13 +357,17 @@ const Calendar: React.FC<Ctx & {s: Extract<Scene, {type: 'calendar'}>}> = ({p, s
   </Area>
 );
 
-const Row: React.FC<{cells: string[]; widths: number[]; delay: number; accent?: string}> = ({cells, widths, delay, accent}) => {
+// `sub` puts a small second line under a cell (e.g. Los Angeles / Beijing time under the New York time).
+const Row: React.FC<{cells: string[]; widths: number[]; delay: number; accent?: string; sub?: Record<number, string>}> = ({cells, widths, delay, accent, sub}) => {
   const e = useEnter(delay);
   return (
-    <div style={{display: 'flex', alignItems: 'center', gap: 14, height: 56, fontSize: 24, borderBottom: `1px solid ${C.panelBorder}`, ...slideUp(e, 12)}}>
+    <div style={{display: 'flex', alignItems: 'center', gap: 14, height: sub ? 66 : 56, fontSize: 24, borderBottom: `1px solid ${C.panelBorder}`, ...slideUp(e, 12)}}>
       {cells.map((c, i) => (
         <div key={i} style={{width: widths[i] || undefined, flex: widths[i] ? undefined : 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-          color: i === 1 ? C.text : i === cells.length - 1 ? (accent || C.sub) : i === 0 ? C.accent : C.text, fontWeight: i === 1 ? 800 : 500}}>{c}</div>
+          color: i === 1 ? C.text : i === cells.length - 1 ? (accent || C.sub) : i === 0 ? C.accent : C.text, fontWeight: i === 1 ? 800 : 500}}>
+          {c}
+          {sub?.[i] ? <div style={{fontSize: 16, color: C.faint, fontWeight: 500, marginTop: 2}}>{sub[i]}</div> : null}
+        </div>
       ))}
     </div>
   );
@@ -338,6 +400,7 @@ export const SceneView: React.FC<{p: BriefingProps; s: Scene}> = ({p, s}) => {
     case 'movers': return <Movers p={p} s={s} />;
     case 'story': return <Story p={p} s={s} index={Number(s.id.replace('story', '')) || 1} />;
     case 'crypto': return <Crypto p={p} s={s} />;
+    case 'earnings': return <Earnings p={p} s={s} />;
     case 'calendar': return <Calendar p={p} s={s} />;
     case 'outro': return <Outro p={p} s={s} />;
   }

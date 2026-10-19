@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Daily entry point for cron / systemd. Safe to run several times a day: completed runs are skipped.
-#   scripts/run_daily.sh                     # session decided by config (auto)
+#   scripts/run_daily.sh                     # session decided by New York time (auto):
+#                                            #   trading day before 09:30 ET → premarket X brief, after 16:15 ET → recap video
 #   scripts/run_daily.sh --session premarket
 #
 # Optional settings (in .env):
@@ -21,7 +22,18 @@ notify() {  # $1 = ok|failed, $2 = message
   if [ -n "${NOTIFY_SCRIPT:-}" ] && [ -x "${NOTIFY_SCRIPT}" ]; then "${NOTIFY_SCRIPT}" "$1" "$2" || true; fi
 }
 
-run() { uv run infostation run "$@" >>"$log" 2>&1; }
+run_once() { uv run infostation run "$@" >>"$log" 2>&1; }
+
+# Daily bars sometimes appear a few minutes late after the close: wait and retry instead of failing.
+run() {
+  local i
+  for i in 1 2 3; do
+    run_once "$@" && return 0
+    tail -5 "$log" | grep -q "no price bars" || return 1
+    [ "$i" -lt 3 ] && { echo "price data not ready yet, retrying in 15 min" >>"$log"; sleep 900; }
+  done
+  return 1
+}
 
 if run "$@"; then
   out="$(grep -o 'done → .*' "$log" | tail -1)"

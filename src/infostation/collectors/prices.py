@@ -123,14 +123,51 @@ def company_names(symbols: list[str]) -> dict[str, str]:
     return names
 
 
-def premarket_quotes(symbols: list[str]) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for sym in symbols:
+def extended_quotes(symbols: list[str]) -> dict[str, dict]:
+    """Pre-market / after-hours quotes from Yahoo's quote summary (one request per symbol, threaded).
+
+    Times are epoch seconds; callers decide whether a quote is fresh enough to show.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(sym: str) -> tuple[str, dict | None]:
         try:
             info = yf.Ticker(sym).get_info()
-            pre, prev = info.get("preMarketPrice"), info.get("regularMarketPreviousClose") or info.get("previousClose")
-            if pre and prev:
-                out[sym] = {"pre_price": pre, "pre_change_pct": (pre / prev - 1) * 100}
         except Exception as e:
-            log.debug("premarket quote failed %s: %s", sym, e)
-    return out
+            log.debug("quote failed %s: %s", sym, e)
+            return sym, None
+        reg = info.get("regularMarketPrice")
+        if not reg:
+            return sym, None
+        q = {"name": info.get("shortName") or info.get("longName") or sym, "market_cap": info.get("marketCap") or 0,
+             "regular_price": reg, "regular_time": info.get("regularMarketTime"),
+             "prev_close": info.get("regularMarketPreviousClose") or info.get("previousClose")}
+        for side, key in (("pre", "preMarket"), ("post", "postMarket")):
+            px = info.get(f"{key}Price")
+            if px:
+                q[f"{side}_price"] = round(float(px), 2)
+                q[f"{side}_change_pct"] = round((px / reg - 1) * 100, 2)
+                q[f"{side}_time"] = info.get(f"{key}Time")
+        return sym, q
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        return {sym: q for sym, q in ex.map(one, sorted(set(symbols))) if q}
+
+
+def live_quotes(symbols: list[str]) -> dict[str, dict]:
+    """Last price vs previous close for futures, FX and overseas indices (they trade before the US open)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(sym: str) -> tuple[str, dict | None]:
+        try:
+            fi = yf.Ticker(sym).fast_info
+            last, prev = float(fi.last_price), float(fi.previous_close)
+        except Exception as e:
+            log.debug("live quote failed %s: %s", sym, e)
+            return sym, None
+        if not last or not prev:
+            return sym, None
+        return sym, {"last": last, "prev_close": prev, "change_pct": round((last / prev - 1) * 100, 2)}
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        return {sym: q for sym, q in ex.map(one, symbols) if q}

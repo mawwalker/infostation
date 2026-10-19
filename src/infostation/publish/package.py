@@ -115,3 +115,41 @@ def review_md(run_dir: Path, scripts: dict[str, dict], threads: dict[str, list[d
     p = run_dir / "review.md"
     p.write_text("\n".join(lines), encoding="utf-8")
     return p
+
+
+def thread_only(run_dir: Path, lang: str, posts: list[dict], cards: dict[str, Path]) -> Path:
+    """Upload package for a thread-only run (pre-market brief): x_thread.md + the cards it uses."""
+    up = run_dir / "upload" / lang
+    if (up / "cards").exists():
+        shutil.rmtree(up / "cards")
+    (up / "cards").mkdir(parents=True)
+    used = {p["card"] for p in posts if p.get("card")}
+    for cid, path in cards.items():
+        if cid in used and path.exists():
+            shutil.copy2(path, up / "cards" / f"{cid}.png")
+    (up / "x_thread.md").write_text(thread_md(lang, posts), encoding="utf-8")
+    return up
+
+
+def premarket_review(run_dir: Path, brief: dict, threads: dict[str, list[dict]], check: dict[str, list[str]],
+                     health: dict) -> Path:
+    lines = [f"# Review — {run_dir.name}", "", f"Data as of {brief['as_of']['en']}", "", "## Covered"]
+    mv = brief["premarket_movers"]
+    lines.append("- Overnight earnings: " + (", ".join(e["symbol"] for e in brief["earnings_overnight"]) or "none"))
+    lines.append("- Pre-market movers: " + (", ".join(f"{m['symbol']} {m['change_pct']:+.2f}%" for m in mv["gainers"] + mv["losers"]) or "none"))
+    lines.append("- Macro today: " + (", ".join(f"{e['event']} ({e['time_en']})" for e in brief["macro_today"]) or "none"))
+    lines += ["", "## Fact check"]
+    for lang, posts in threads.items():
+        issues = check.get(lang, [])
+        over = [i + 1 for i, p in enumerate(posts) if p.get("over_limit")]
+        lines.append(f"- **{lang}**: {len(posts)} posts, " + ("✅ all numbers traced to data" if not issues else f"❌ {len(issues)} unverified")
+                     + (f", ⚠️ over 280: {over}" if over else ""))
+        lines += [f"  - {i}" for i in issues]
+    lines += ["", "## Data sources"]
+    for k, v in health.items():
+        lines.append(f"- {'✅' if v.get('ok') else '❌'} {k}: {v.get('detail', '')}")
+    lines += ["", "## Before posting", "- [ ] Read both threads once (pre-market quotes move fast — post before 9:30 ET)",
+              "- [ ] Post `x_thread.md` with the attached cards", ""]
+    p = run_dir / "review.md"
+    p.write_text("\n".join(lines), encoding="utf-8")
+    return p

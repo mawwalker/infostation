@@ -74,8 +74,6 @@ def strip_series(view: dict) -> dict:
     """Remove chart series (sparklines) so the LLM prompt stays small."""
     out = dict(view)
     out["market"] = [{k: v for k, v in r.items() if k != "spark"} for r in view.get("market", [])]
-    if "futures" in view:
-        out["futures"] = [{k: v for k, v in r.items() if k != "spark"} for r in view["futures"]]
     if "crypto" in view:
         out["crypto"] = {k: v for k, v in view["crypto"].items() if k != "btc_history"}
     return out

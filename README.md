@@ -1,14 +1,17 @@
 # InfoStation · 全自动美股/加密情报站
 
-每个交易日自动完成：采集免费数据 → 量化筛选 → agy 选题并写中英文稿 → 数字核对 → 本地 IndexTTS 配音 → Remotion 渲染。
-每期产出：
+每个交易日自动出两期内容：
 
-- 中文、英文 16:9 视频各一条
-- 缩略图、字幕
-- YouTube 标题、简介（含章节）、标签
-- X 推文串和配图卡片
+| | 盘前速览 | 盘后复盘 |
+| --- | --- | --- |
+| 运行时间（纽约 / 洛杉矶） | 07:30 ET / 04:30 PT | 17:00 ET / 14:00 PT |
+| 耗时 | 约 5 分钟 | 约 35–40 分钟 |
+| 产出 | 中英文 X 推文串 + 图卡 | 中英文 16:9 视频、缩略图、字幕、YouTube 文案、X 推文串 + 图卡 |
+| 内容 | 期货与海外市场、隔夜财报、盘前异动、今日日程 | 大盘、板块、异动、三条主线、**盘后财报**、加密、明日看点 |
 
-**上传由你手动完成。**
+流程：采集免费数据 → 量化筛选 → agy 选题并写中英文稿 → 数字核对 → 本地 IndexTTS 配音 → Remotion 渲染。**上传和发帖由你手动完成。**
+
+**时间约定**：一律以纽约时间（美东，ET）为准，交易所就按它运作，夏令时自动处理。视频、图卡和推文里出现的时间，中文版写成「美东 8:30（洛杉矶 5:30 / 北京 20:30）」，英文版写成「8:30 a.m. ET (5:30 a.m. PT)」，可在 `config.yaml` 的 `time_zones` 里改。洛杉矶永远比纽约晚 3 小时。
 
 设计思路与风险分析见 [docs/PLAN.md](docs/PLAN.md)；给 Agent 看的说明见 [AGENTS.md](AGENTS.md)。
 
@@ -57,7 +60,21 @@ uv run infostation doctor
 
 ## 二、每天怎么运行（手动）
 
-**什么时候跑**：美股收盘后，北京时间早上 6 点以后（夏令时 4 点后）跑“盘后复盘”。程序会自动判断复盘哪个交易日，周末和美股假日也不会出错。
+`scripts/run_daily.sh` 会按纽约时间自动决定跑哪一期：交易日 09:30 ET 之前跑**盘前速览**，16:15 ET 之后跑**盘后复盘**（含盘后财报，建议 17:00 ET / 14:00 PT 以后跑，这时大部分盘后财报已经出来）。周末和美股假日不会出错。
+
+### 盘前速览（早上，约 5 分钟）
+
+```bash
+scripts/run_daily.sh          # 在 09:30 ET（06:30 PT）之前运行
+```
+
+跑完后：
+
+1. 打开 `runs/<日期>_premarket/review.md`，确认数字核对是 ✅。
+2. 按 `upload/zh/x_thread.md`、`upload/en/x_thread.md` 发推，`[image: cards/xxx.png]` 处附上对应图卡。
+3. **开盘前发完**：盘前报价变化快，开盘后就过时了。
+
+### 盘后复盘（下午，约 35–40 分钟）
 
 **跑一次**，三种方式任选：
 
@@ -100,7 +117,7 @@ claude -p "跑今天的复盘视频，检查 review.md 和视频截帧后汇报"
 **其他常用命令**
 
 ```bash
-uv run infostation run --session premarket          # 盘前早报（北京时间晚上，美股开盘前）
+uv run infostation run --session premarket          # 手动指定盘前速览
 uv run infostation run --date 2026-10-16 --force    # 重做某一天
 uv run infostation run --from write                 # 改了提示词后，从写稿开始重跑
 uv run infostation run --only render                # 改了视频模板后，只重新渲染
@@ -125,7 +142,7 @@ systemctl --user enable --now infostation.timer
 loginctl enable-linger $USER          # 未登录桌面时也能运行（本机已开启）
 ```
 
-默认**北京时间周二到周六 06:30** 运行，对应美股周一到周五收盘后。
+默认**周一到周五 17:00 ET（14:00 PT）**跑盘后复盘。
 
 ```bash
 systemctl --user list-timers infostation.timer   # 下次运行时间
@@ -134,17 +151,21 @@ journalctl --user -u infostation.service -n 50   # systemd 日志
 ls -t data/logs/ | head                          # 每次运行的完整日志
 ```
 
-想同时做**盘前早报**（北京时间工作日 19:00），再启用一个定时器：
+再启用**盘前速览**定时器，周一到周五 **07:30 ET（04:30 PT）**运行，约 5 分钟出结果，你在开盘前（06:30 PT）发帖即可：
 
 ```bash
 cp deploy/infostation-premarket.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now infostation-premarket.timer
 ```
 
-不用 systemd 也可以用 cron（cron 时间是本机时区，本机是美西时间，北京 06:30 = 美西前一天 15:30，夏令时）：
+两个定时器都直接写纽约时间（`America/New_York`），夏令时切换不用管。电脑睡眠错过了也没关系：醒来补跑时按当时的纽约时间判断，开盘后不会再补发过时的盘前速览，假日也会直接跳过。
+
+不用 systemd 也可以用 cron（cronie 支持 `CRON_TZ`）：
 
 ```
-30 15 * * 1-5 /home/dsm/workspace/auto_information_state/scripts/run_daily.sh
+CRON_TZ=America/New_York
+30 7  * * 1-5 /home/dsm/workspace/auto_information_state/scripts/run_daily.sh
+0  17 * * 1-5 /home/dsm/workspace/auto_information_state/scripts/run_daily.sh
 ```
 
 ### 2. 全自动的前提条件
@@ -173,7 +194,8 @@ AUTO_FIX=1
 
 ### 5. 全自动之后，你每天要做的
 
-收到“InfoStation: ok”通知 → 打开 `review.md` 看一眼 → 按「二、跑完之后发布」上传。整个过程 10 分钟左右。
+- **早上**（04:35 PT 左右）：收到盘前速览的通知 → 看一眼 `review.md` → 开盘前发 X，约 3 分钟。
+- **下午**（14:40 PT 左右）：收到盘后复盘的通知 → 看 `review.md` → 上传 YouTube、发 X，约 10 分钟。
 
 ---
 
@@ -184,7 +206,9 @@ AUTO_FIX=1
 | 现象 | 处理 |
 | --- | --- |
 | 某个数据源 ❌ | 通常是对方临时限流，第二天会恢复；连续多天失败，让 agy/Claude Code 按 AGENTS.md 修采集器 |
-| `no price bars for <日期>` | 行情还没更新（跑得太早），过半小时再跑 |
+| `no price bars for <日期>` | 行情还没更新（跑得太早）。`run_daily.sh` 会自动等 15 分钟重试两次；手动跑就过半小时再跑 |
+| 盘前速览没有「盘前异动」 | 当天观察池里没有涨跌超过 1.5% 的股票，属正常；阈值在 `premarket.movers_min_change_pct` |
+| 盘后财报段显示「暂无报价」 | 盘后报价只在 16:00–20:00 ET 有效；重跑以前的日期时拿不到当时的盘后价，属正常 |
 | 写稿退回了模板（review.md 显示 `template`） | agy 不可用或登录过期：运行 `agy models` 检查，然后 `uv run infostation run --from edit --force` |
 | 数字核对 ❌ | 打开 `runs/<id>/script_<语言>.json` 看 `_factcheck` 列出的数字；确实是错的就 `--from write` 重写 |
 | IndexTTS 报错 / 显存不足 | 关掉占用显卡的程序，然后 `uv run infostation run --from voice`；临时应急可在 config 里设 `tts.provider: edge` |
@@ -218,7 +242,11 @@ AUTO_FIX=1
 
 | 配置项 | 作用 |
 | --- | --- |
-| `universe.watchlist` | 每天必扫的股票池 |
+| `universe.watchlist` | 每天必扫的股票池（也是盘前异动的扫描范围） |
+| `time_zones` | 时间附注哪些时区（默认中文 美东/洛杉矶/北京，英文 ET/PT） |
+| `premarket.board` | 盘前看板的期货和海外指数 |
+| `premarket.movers_min_change_pct` | 盘前涨跌超过多少算异动（默认 1.5%） |
+| `calendar.after_hours_max` | 复盘视频「盘后财报」段最多讲几家（默认 5） |
 | `screening.stories` | 每期主线数量（默认 3） |
 | `llm.models` | agy 使用的模型（默认 `gemini-4-argon-medium`） |
 | `tts.voices` | 配音参考音频 |

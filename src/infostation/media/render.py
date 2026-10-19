@@ -6,9 +6,10 @@ import logging
 import math
 import shutil
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
+from .. import timefmt
 from ..config import VIDEO_DIR, Settings
 
 log = logging.getLogger(__name__)
@@ -18,20 +19,24 @@ LABELS = {
            "story": "主线", "keypoints": "要点", "sentiment": "散户情绪", "bull": "看多", "bear": "看空",
            "headlines": "相关新闻", "crypto": "加密货币", "prices": "主流币 24h", "feargreed": "恐惧贪婪指数",
            "weekago": "一周前", "dominance": "BTC 市占率", "funding": "永续资金费率 (8h)", "calendar": "前瞻",
-           "earnings": "财报日程", "macro": "宏观数据", "nfa": "不构成投资建议"},
+           "earnings": "财报日程", "macro": "宏观数据", "nfa": "不构成投资建议", "ah": "盘后财报", "eps": "每股收益",
+           "est": "预期", "surprise": "超预期幅度", "move": "盘后涨跌", "noquote": "暂无报价"},
     "en": {"market": "MARKETS", "sectors": "SECTORS", "movers": "MOVERS", "gainers": "Top gainers", "losers": "Top losers",
            "vol": "Vol", "story": "STORY", "keypoints": "Key points", "sentiment": "Retail sentiment", "bull": "bull",
            "bear": "bear", "headlines": "Headlines", "crypto": "CRYPTO", "prices": "Majors 24h", "feargreed": "Fear & Greed",
            "weekago": "Week ago", "dominance": "BTC dominance", "funding": "Perp funding (8h)", "calendar": "AHEAD",
-           "earnings": "Earnings", "macro": "Macro", "nfa": "Not financial advice"},
+           "earnings": "Earnings", "macro": "Macro", "nfa": "Not financial advice", "ah": "AFTER HOURS", "eps": "EPS",
+           "est": "est.", "surprise": "Surprise", "move": "After hours", "noquote": "no quote yet"},
 }
 CHAPTERS = {
     "zh": {"intro": "开场", "market": "大盘概览", "sectors": "板块轮动", "movers": "异动个股", "story": "主线",
-           "crypto": "加密市场", "calendar": "前瞻日历", "outro": "总结"},
+           "crypto": "加密市场", "calendar": "前瞻日历", "outro": "总结",
+           "earnings": "盘后财报"},
     "en": {"intro": "Intro", "market": "Market overview", "sectors": "Sectors", "movers": "Top movers", "story": "Story",
-           "crypto": "Crypto", "calendar": "What's ahead", "outro": "Wrap-up"},
+           "crypto": "Crypto", "calendar": "What's ahead", "outro": "Wrap-up",
+           "earnings": "After-hours earnings"},
 }
-SESSION = {"recap": {"zh": "盘后复盘", "en": "After-the-Bell Recap"}, "premarket": {"zh": "盘前早报", "en": "Pre-Market Briefing"}}
+SESSION = {"recap": {"zh": "盘后复盘", "en": "After-the-Bell Recap"}, "premarket": {"zh": "盘前速览", "en": "Pre-Market Brief"}}
 DISCLAIMER = {
     "zh": "本视频由程序采集公开数据并经 AI 辅助生成，仅供信息参考，不构成任何投资建议。投资有风险，决策需独立判断。",
     "en": "This video is produced from public data with AI assistance for informational purposes only and is not investment advice.",
@@ -41,6 +46,7 @@ WEEKDAY_ZH = "一二三四五六日"
 FNG_ZH = {"Extreme Fear": "极度恐惧", "Fear": "恐惧", "Neutral": "中性", "Greed": "贪婪", "Extreme Greed": "极度贪婪"}
 TIMING_ZH = {"BMO": "盘前", "AMC": "盘后", "TBD": "待定"}
 IMPACT_ZH = {"High": "高", "Medium": "中", "Low": "低"}
+IMPACT_EN = {"Medium": "Med"}
 
 
 def date_label(d: date, lang: str) -> str:
@@ -122,14 +128,10 @@ def build_props(s: Settings, lang: str, view: dict, render_extra: dict, script: 
                     "dominance": g.get("btc_dominance"),
                     "totalMcapT": round(g["total_mcap_usd"] / 1e12, 2) if g.get("total_mcap_usd") else None,
                     "btcHistory": [{"date": k["date"], "close": k["close"]} for k in render_extra.get("btc_history", [])]}
+        elif typ == "earnings":
+            data = earnings_data(view.get("after_hours", []), "after_hours", lang)
         elif typ == "calendar":
-            cal = view.get("calendar") or {}
-            zh = lang == "zh"
-            data = {"earnings": [{"date": e["date"], "symbol": e["symbol"], "name": e["name"],
-                                  "time": TIMING_ZH.get(e["time"], e["time"]) if zh else e["time"]} for e in cal.get("earnings", [])],
-                    "macro": [{"date": e["date"], "time": e["datetime_et"][11:16] + (" ET" if not zh else ""), "event": e["event"],
-                               "impact": IMPACT_ZH.get(e["impact"], e["impact"]) if zh else e["impact"]}
-                              for e in cal.get("macro", [])]}
+            data = calendar_data(s, view.get("calendar") or {}, lang)
         else:
             data = {"theme": editor["market_theme"][lang], "disclaimer": DISCLAIMER[lang], "cta": CTA[lang]}
         scenes.append({"id": sc["id"], "type": typ, "title": sc["title"],
@@ -148,6 +150,26 @@ def build_props(s: Settings, lang: str, view: dict, render_extra: dict, script: 
     }
 
 
+def earnings_data(rows: list[dict], side: str, lang: str) -> dict:
+    """Earnings table for the video / cards. side = after_hours | premarket (which extended-hours move to show)."""
+    return {"moveLabel": LABELS[lang]["move"] if side == "after_hours" else ("盘前涨跌" if lang == "zh" else "Pre-market"),
+            "rows": [{"symbol": r["symbol"], "name": r["name"], "eps": r.get("eps_actual"), "eps_est": r.get("eps_estimate"),
+                      "surprise_pct": r.get("eps_surprise_pct"), "move_pct": r.get(f"{side}_change_pct")} for r in rows[:6]]}
+
+
+def calendar_data(s: Settings, cal: dict, lang: str) -> dict:
+    zh = lang == "zh"
+    zones = timefmt.zones_for(s, lang)
+    macro = []
+    for e in cal.get("macro", []):
+        main, sub = timefmt.pair(datetime.fromisoformat(e["datetime_et"]), lang, zones)
+        macro.append({"date": e["date"], "time": main, "timeSub": sub, "event": e["event"],
+                      "impact": (IMPACT_ZH if zh else IMPACT_EN).get(e["impact"], e["impact"])})
+    return {"earnings": [{"date": e["date"], "symbol": e["symbol"], "name": e["name"],
+                          "time": TIMING_ZH.get(e["time"], e["time"]) if zh else e["time"]} for e in cal.get("earnings", [])],
+            "macro": macro}
+
+
 def thumbnail_props(lang: str, script: dict, props: dict, view: dict) -> dict:
     return {"lang": lang, "text": script["thumbnail_text"], "subtext": script["thumbnail_subtext"],
             "brand": props["brand"]["name"], "dateLabel": props["dateLabel"], "colors": props["colors"],
@@ -158,7 +180,8 @@ def thumbnail_props(lang: str, script: dict, props: dict, view: dict) -> dict:
 
 
 def card_ids(view: dict) -> list[str]:
-    return ["market", "sectors", "movers"] + [f"story{i + 1}" for i in range(len(view.get("stories", [])))] + ["crypto", "calendar"]
+    return (["market", "sectors", "movers"] + [f"story{i + 1}" for i in range(len(view.get("stories", [])))]
+            + (["afterhours"] if view.get("after_hours") else []) + ["crypto", "calendar"])
 
 
 def run_remotion(jobs: list[dict], public_dir: Path, concurrency: int, job_path: Path) -> None:

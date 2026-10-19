@@ -12,10 +12,12 @@ from . import factcheck, templates
 
 log = logging.getLogger(__name__)
 
-# (id, type, seconds). Story scenes are expanded to story1..storyN.
+# (id, type, seconds). Story scenes are expanded to story1..storyN; the after-hours scene only exists when
+# companies reported after the close.
 SCENE_PLAN = [
     ("intro", "intro", 16), ("market", "market", 38), ("sectors", "sectors", 24), ("movers", "movers", 32),
-    ("story", "story", 68), ("crypto", "crypto", 36), ("calendar", "calendar", 26), ("outro", "outro", 12),
+    ("story", "story", 68), ("afterhours", "earnings", 0), ("crypto", "crypto", 36), ("calendar", "calendar", 30),
+    ("outro", "outro", 12),
 ]
 CHARS_PER_SEC = {"zh": 4.2, "en": 2.0}   # zh: characters, en: words (edge-tts pace incl. pauses)
 
@@ -27,7 +29,9 @@ STYLE = {
         "- 场景之间要有自然过渡句，不要每段都用「接下来」。\n"
         "- 不要使用「家人们」「炸裂」「史诗级」等夸张用语，不要用感叹号堆情绪。\n"
         "- 结尾一句话总结今天的主线，并提醒「以上内容不构成投资建议」。\n"
-        "- 数字要方便听：百分比最多保留2位小数；上万的价格可以说成「8.14万美元」这类口语化写法（数值必须来自数据）。"
+        "- 数字要方便听：百分比最多保留2位小数；上万的价格可以说成「8.14万美元」这类口语化写法（数值必须来自数据）。\n"
+        "- 时间以美东时间为准。口播（narration）里提到具体时间，照抄 DATA 的 spoken_zh（如「美东时间周四早上8点半，也就是北京时间周四晚上8点半」），"
+        "不要自己换算；屏幕要点（bullets）用简短的美东时间（如「周四美东8:30」）。屏幕上会同时标出美东、洛杉矶、北京三个时间。"
     ),
     "en": (
         "- Sound like a sharp, conversational market host — short sentences, plain words, no hype.\n"
@@ -36,7 +40,9 @@ STYLE = {
         "- Vary transitions between scenes; never start consecutive scenes with 'Next'.\n"
         "- No clickbait words ('insane', 'massive', 'explodes'); no exclamation marks.\n"
         "- Close with a one-line takeaway and 'This is not financial advice.'\n"
-        "- Format numbers for listening: thousands separators (81,427), at most 2 decimals for percentages."
+        "- Format numbers for listening: thousands separators (81,427), at most 2 decimals for percentages.\n"
+        "- Event times are Eastern Time: in narration copy DATA's spoken_en ('8:30 a.m. Eastern on Thursday'); in bullets "
+        "use the short form ('Thu 8:30 a.m. ET'). The screen also shows Pacific time."
     ),
 }
 NAME_RULE = {
@@ -47,11 +53,14 @@ SESSION_LABEL = {"recap": {"zh": "盘后复盘", "en": "after-the-bell recap"},
                  "premarket": {"zh": "盘前早报", "en": "pre-market briefing"}}
 
 
-def scene_plan(n_stories: int) -> list[dict]:
+def scene_plan(n_stories: int, n_after_hours: int = 0) -> list[dict]:
     out = []
     for sid, typ, sec in SCENE_PLAN:
         if typ == "story":
             out += [{"id": f"story{i}", "type": "story", "seconds": sec} for i in range(1, n_stories + 1)]
+        elif typ == "earnings":
+            if n_after_hours:
+                out.append({"id": sid, "type": typ, "seconds": min(60, 14 + 12 * n_after_hours)})
         else:
             out.append({"id": sid, "type": typ, "seconds": sec})
     return out
@@ -201,6 +210,11 @@ class Writer:
                 extra = f" — about {st['symbol']}: {st['angle']}"
             if sc["type"] == "intro":
                 extra = " — bullets = one short factual hook per story, in story order"
+            if sc["type"] == "earnings":
+                extra = (" — companies in DATA.after_hours that reported after today's close: EPS vs estimate and the "
+                         "after-hours move, biggest move first, 1-2 sentences each")
+            if sc["type"] == "calendar":
+                extra = " — what to watch: the next trading session first (times from DATA), then the rest of the week"
             scene_lines.append(f"- id={sc['id']} type={sc['type']}: about {target} {unit}{extra}")
         prompt = _fill(
             (PROMPTS_DIR / "script.md").read_text(encoding="utf-8"),
@@ -236,6 +250,47 @@ class Writer:
                 p["weighted_len"] = x_weighted_length(p["text"])
                 p["over_limit"] = p["weighted_len"] > 280
         return {lang: out.get(lang, []) for lang in self.s.languages}
+
+    def premarket_threads(self, view: dict, cards: list[str]) -> dict:
+        """Pre-market brief: X threads only. Returns {lang: posts, "_source": ..., "_factcheck": {lang: [...]}}."""
+        n_min, n_max = self.s.get("premarket.posts", [4, 6])
+        values = factcheck.collect_values(view)
+        revision, out, issues = "", None, {}
+        for attempt in range(int(self.s.get("factcheck.max_rewrites", 1)) + 1):
+            prompt = _fill((PROMPTS_DIR / "premarket.md").read_text(encoding="utf-8"),
+                           BRAND=f"{self.brand['zh']} / {self.brand['en']}", DATE=view["date"], N_MIN=str(n_min),
+                           N_MAX=str(n_max), CARDS=", ".join(f'"{c}"' for c in cards), REVISION=revision,
+                           DATA=factcheck.dumps_for_prompt(view))
+            try:
+                out = self.client.run("premarket_thread" + (f"_rev{attempt}" if attempt else ""), prompt, thread_schema())
+            except LLMError as e:
+                log.error("premarket thread LLM failed, using template fallback: %s", e)
+                fb = templates.premarket_fallback(view, cards)
+                return {lang: fb[lang] for lang in self.s.languages} | {"_source": "template", "_factcheck": {}}
+            issues = self._thread_issues(out, values)
+            if not any(issues.values()):
+                break
+            log.warning("premarket thread factcheck flagged: %s", issues)
+            revision = ("## Revision required\nYour previous draft used numbers that are NOT in DATA. Rewrite both threads; "
+                        "remove or replace these:\n" + "\n".join(f"- [{lang}] {i}" for lang, xs in issues.items() for i in xs) +
+                        "\n\nPrevious draft:\n```json\n" + json.dumps(out, ensure_ascii=False) + "\n```")
+        assert out is not None
+        for lang in ("zh", "en"):
+            for p in out.get(lang, []):
+                if p.get("card") not in cards:
+                    p["card"] = None
+        self._shorten_posts(out)
+        for lang in ("zh", "en"):
+            for p in out.get(lang, []):
+                p["weighted_len"] = x_weighted_length(p["text"])
+                p["over_limit"] = p["weighted_len"] > 280
+        return {lang: out.get(lang, []) for lang in self.s.languages} | {
+            "_source": "llm", "_factcheck": self._thread_issues(out, values)}
+
+    @staticmethod
+    def _thread_issues(out: dict, values: list[float]) -> dict[str, list[str]]:
+        return {lang: [f"post {i + 1}: {x}" for i, p in enumerate(out.get(lang, []))
+                       for x in factcheck.check_text(p.get("text", ""), values)] for lang in ("zh", "en")}
 
     def _shorten_posts(self, out: dict) -> None:
         """One agy pass to rewrite over-long posts, then a hard sentence-level trim as the last resort."""

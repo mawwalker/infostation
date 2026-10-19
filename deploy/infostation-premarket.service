@@ -1,10 +1,12 @@
 [Unit]
-Description=InfoStation pre-market briefing
+Description=InfoStation pre-market X brief
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/workspace/auto_information_state
-ExecStart=%h/workspace/auto_information_state/scripts/run_daily.sh --session premarket
-TimeoutStartSec=3h
+# No --session: "auto" picks premarket only on a trading day before 09:30 ET, so a late catch-up run
+# (machine was asleep) or a holiday does not produce a stale brief.
+ExecStart=%h/workspace/auto_information_state/scripts/run_daily.sh
+TimeoutStartSec=1h

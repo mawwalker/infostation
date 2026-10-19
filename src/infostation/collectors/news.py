@@ -5,7 +5,7 @@ import calendar
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import feedparser
 
@@ -59,13 +59,26 @@ def ticker_news(http: Http, symbol: str, company: str, per_ticker: int, since: d
     return out[:per_ticker]
 
 
+# Feed titles are not outlet names ("US Top News and Analysis" is CNBC); attribute by domain instead.
+_OUTLETS = {"cnbc.com": "CNBC", "dowjones.io": "MarketWatch", "marketwatch.com": "MarketWatch", "coindesk.com": "CoinDesk",
+            "cointelegraph.com": "Cointelegraph", "reuters.com": "Reuters", "wsj.com": "WSJ", "bloomberg.com": "Bloomberg"}
+
+
+def _outlet(url: str) -> str | None:
+    host = urlparse(url).hostname or ""
+    return next((name for dom, name in _OUTLETS.items() if host == dom or host.endswith("." + dom)), None)
+
+
 def market_news(http: Http, feeds: list[str], since: datetime, limit: int = 40) -> list[dict]:
     items: list[dict] = []
     for url in feeds:
         try:
-            items.extend(_parse_feed(http, url))
+            got = _parse_feed(http, url)
         except SourceError as e:
             log.warning("feed failed %s: %s", url, e)
+            continue
+        outlet = _outlet(url)
+        items.extend(i | {"source": outlet} if outlet else i for i in got)
     items = [i for i in items if i["published"] and datetime.fromisoformat(i["published"]) >= since]
     items.sort(key=lambda i: i["published"], reverse=True)
     return items[:limit]

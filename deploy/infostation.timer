@@ -1,9 +1,10 @@
 [Unit]
-Description=Run InfoStation after the US close (Beijing 06:30, Tue–Sat)
+Description=InfoStation after-the-bell recap video (17:00 New York time, Mon–Fri)
 
 [Timer]
-# 06:30 Beijing = 18:30 ET (EDT) / 17:30 ET (EST): always after the 16:00 ET close.
-OnCalendar=Tue..Sat 06:30 Asia/Shanghai
+# Exchange time: 16:00 ET close, after-hours earnings land 16:05–16:30. 17:00 ET = 14:00 Los Angeles.
+# Holidays are handled by the pipeline (auto session → nothing new to do → exits quickly).
+OnCalendar=Mon..Fri 17:00 America/New_York
 Persistent=true
 
 [Install]

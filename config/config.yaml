@@ -7,9 +7,16 @@ brand:
 
 languages: [zh, en]
 
-# 运行时段：recap=盘后复盘（数据最完整，推荐主力），premarket=盘前早报
-# auto：美东 16:15 之后跑 recap；美东 00:00–09:30 跑 premarket；非交易日跑最近一个交易日的 recap
+# 运行时段（一律按美东时间判断，交易所按纽约时间运作）：
+#   recap     = 盘后复盘视频 + 推文串（含盘后财报）。auto：交易日美东 16:15 之后
+#   premarket = 盘前速览，只出 X 推文串 + 图卡。auto：交易日美东 00:00–09:30
+# 非交易日 auto 会跑最近一个交易日的 recap（已完成就直接跳过）
 session: auto
+
+# 视频、图卡、推文里出现的时间：以美东为准，后面附注其他时区。ET=美东 PT=洛杉矶 BJ=北京
+time_zones:
+  zh: [ET, PT, BJ]
+  en: [ET, PT]
 
 llm:
   cli: agy
@@ -45,10 +52,23 @@ market_board:
   - {symbol: CL=F,      name_zh: "原油",      name_en: "Crude Oil"}
   # BTC 不放这里：股市按收盘价算日涨跌，加密是 24h 滚动，混在一起会出现两个不同的 BTC 涨跌幅
 
-futures:   # 盘前早报用
-  - {symbol: ES=F, name_zh: "标普期货", name_en: "S&P Futures"}
-  - {symbol: NQ=F, name_zh: "纳指期货", name_en: "Nasdaq Futures"}
-  - {symbol: YM=F, name_zh: "道指期货", name_en: "Dow Futures"}
+premarket:
+  # 盘前看板：期货和海外市场在美股开盘前都在交易（5 列 × 2 行）
+  board:
+    - {symbol: ES=F,      name_zh: "标普期货",  name_en: "S&P Futures"}
+    - {symbol: NQ=F,      name_zh: "纳指期货",  name_en: "Nasdaq Futures"}
+    - {symbol: YM=F,      name_zh: "道指期货",  name_en: "Dow Futures"}
+    - {symbol: RTY=F,     name_zh: "罗素期货",  name_en: "Russell Futures"}
+    - {symbol: DX-Y.NYB,  name_zh: "美元指数",  name_en: "Dollar Index"}
+    - {symbol: ^N225,     name_zh: "日经225",   name_en: "Nikkei 225"}
+    - {symbol: ^HSI,      name_zh: "恒生指数",  name_en: "Hang Seng"}
+    - {symbol: ^STOXX50E, name_zh: "欧洲斯托克50", name_en: "Euro Stoxx 50"}
+    - {symbol: GC=F,      name_zh: "黄金",      name_en: "Gold"}
+    - {symbol: CL=F,      name_zh: "原油",      name_en: "Crude Oil"}
+  movers_min_change_pct: 1.5      # 盘前涨跌超过这个幅度才算异动
+  movers_min_market_cap: 1.0e10   # 观察池以外的股票需要的最小市值
+  max_movers: 5                   # 领涨/领跌各最多几只
+  posts: [4, 6]                   # 推文条数范围
 
 sectors:
   - {symbol: XLK,  name_zh: "科技",     name_en: "Tech"}
@@ -87,6 +107,7 @@ calendar:
   earnings_days_ahead: 3
   macro_days_ahead: 5
   earnings_min_market_cap: 2.0e10
+  after_hours_max: 5              # 复盘视频「盘后财报」段最多讲几家（按市值）
   macro_impact: [High, Medium]
 
 tts:

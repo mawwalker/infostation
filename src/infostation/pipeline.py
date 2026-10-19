@@ -6,19 +6,19 @@ import logging
 import re
 import shutil
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
 
-from . import store
+from . import store, timefmt
 from .analysis import datapack, metrics as M, screener
 from .collectors import crypto, events, news, options, prices, sec, social
 from .config import ASSETS_DIR, RUNS_DIR, Settings
 from .http import Http
 from .llm.agy import AgyClient
-from .market_calendar import SessionPlan, upcoming_sessions
+from .market_calendar import ET, SessionPlan, upcoming_sessions
 from .media import comfy, render, tts
 from .publish import package
 from .writing import factcheck
@@ -42,7 +42,19 @@ def pretty_name(title: str) -> str:
     return name or title
 
 
+def with_times(s: Settings, macro: list[dict]) -> list[dict]:
+    """Add viewer-facing times: New York first, then Los Angeles / Beijing (config `time_zones`)."""
+    out = []
+    for e in macro:
+        dt = datetime.fromisoformat(e["datetime_et"])
+        out.append(e | {f"time_{lang}": timefmt.multi(dt, lang, timefmt.zones_for(s, lang), with_day=True)
+                        for lang in ("zh", "en")} | {f"spoken_{lang}": timefmt.spoken(dt, lang) for lang in ("zh", "en")})
+    return out
+
+
 class Run:
+    STEPS = STEPS
+
     def __init__(self, settings: Settings, plan: SessionPlan):
         self.s = settings
         self.plan = plan
@@ -82,8 +94,7 @@ class Run:
     # ---------- steps ----------
     def step_collect(self) -> None:
         s, http, d = self.s, self.http, self.plan.target_date
-        board = s.get("market_board") + (s.get("futures") if self.plan.session == "premarket" else [])
-        fixed = [b["symbol"] for b in board] + [x["symbol"] for x in s.get("sectors")]
+        fixed = [b["symbol"] for b in s.get("market_board")] + [x["symbol"] for x in s.get("sectors")]
         watch = list(s.get("universe.watchlist"))
 
         ape = social.apewisdom(http, d)
@@ -120,16 +131,14 @@ class Run:
         cr = crypto.collect(http, s.get("crypto.symbols"), s.get("crypto.funding_symbols"), d)
         self.health("crypto", bool(cr["assets"]), f"{len(cr['assets'])} assets, F&G={bool(cr['fear_greed'])}")
 
+        big = float(s.get("calendar.earnings_min_market_cap", 2e10))
         ahead = upcoming_sessions(d, int(s.get("calendar.earnings_days_ahead", 3)))
-        if self.plan.session == "premarket":
-            ahead = [d] + ahead[:-1]
-        earn = events.earnings(http, ahead, float(s.get("calendar.earnings_min_market_cap", 2e10)), set(watch))
-        reported = events.earnings(http, [self.plan.prev_date, d], 0, set())
+        earn = events.earnings(http, ahead, big, set(watch))
+        # Who reported yesterday after the close / today, with timing + EPS (screener flag and the after-hours scene)
+        reported = events.reports(http, [self.plan.prev_date, d], set(universe) | set(watch), big)
         macro_days = upcoming_sessions(d, int(s.get("calendar.macro_days_ahead", 5)))
-        if self.plan.session == "premarket":
-            macro_days = [d] + macro_days[:-1]
         macro = events.macro(http, macro_days[0], macro_days[-1], s.get("calendar.macro_impact", ["High"]))
-        self.health("earnings_calendar", bool(earn or reported), f"{len(earn)} upcoming")
+        self.health("earnings_calendar", bool(earn or reported), f"{len(earn)} upcoming, {len(reported)} reported")
         self.health("macro_calendar", True, f"{len(macro)} events")
 
         since = datetime.now(timezone.utc) - timedelta(hours=36)
@@ -148,6 +157,7 @@ class Run:
         px["date"] = px["date"].dt.date
         met = M.compute(px, d)
         if not met:
+            self.state["done"] = [x for x in self.state["done"] if x != "collect"]   # a retry must re-download
             raise RuntimeError(f"no price bars for {d} — market data not updated yet?")
 
         try:
@@ -168,8 +178,9 @@ class Run:
         # Unknown cap only allowed for watchlist names; drop other unknowns (ETFs, junk tickers).
         eligible = {k: v for k, v in met.items() if k in watch or caps.get(k, 0) > 0}
         ape_map = {r["symbol"]: r for r in col["apewisdom"]}
+        timing = lambda r: r.get("timing", r.get("time"))     # noqa: E731  ("time" = runs collected before 2026-10-18)
         rep = {r["symbol"] for r in col["reported"]
-               if (r["date"] == d.isoformat() and r["time"] != "AMC") or (r["date"] == self.plan.prev_date.isoformat() and r["time"] == "AMC")}
+               if (r["date"] == d.isoformat() and timing(r) != "AMC") or (r["date"] == self.plan.prev_date.isoformat() and timing(r) == "AMC")}
         cooldown = store.recently_featured(d.isoformat(), int(s.get("screening.cooldown_days", 2)))
         missing_caps = [w for w in watch if not caps.get(w)]
         caps.update({k: v for k, v in prices.market_caps(missing_caps).items() if v})
@@ -207,7 +218,7 @@ class Run:
                 row["name"] = names.get(row["symbol"], row["symbol"])
         up = sum(1 for k, m in eligible.items() if k not in exclude and m["change_pct"] > 0)
         down = sum(1 for k, m in eligible.items() if k not in exclude and m["change_pct"] < 0)
-        board = s.get("market_board") + (s.get("futures") if self.plan.session == "premarket" else [])
+        board = s.get("market_board")
         base = {
             "session": self.plan.session, "date": d.isoformat(), "prev_session": self.plan.prev_date.isoformat(),
             "market": datapack.market_rows(board, met, px, d),
@@ -222,15 +233,46 @@ class Run:
             "retail_trending": [{k: r[k] for k in ("symbol", "rank", "mentions", "mentions_24h_ago")}
                                 for r in col["apewisdom"][:10]],
             "crypto": col["crypto"],
-            "calendar": {"earnings": col["earnings"][:14], "macro": col["macro"][:12]},
+            "after_hours": self._after_hours(col, met, watch),
+            "calendar": {"earnings": col["earnings"][:14], "macro": with_times(self.s, col["macro"][:12])},
             "market_headlines": [{"title": h["title"], "source": h["source"]} for h in col["market_news"][:25]],
         }
-        if self.plan.session == "premarket":
-            pre = prices.premarket_quotes(syms)
-            for c in cands:
-                if c["symbol"] in pre:
-                    c["premarket"] = pre[c["symbol"]]
         self.save("research.json", {"base": base, "candidates": cands})
+
+    def _after_hours(self, col: dict, met: dict, watch: set[str]) -> list[dict]:
+        """Companies that reported after today's close: EPS vs estimate + after-hours move (tomorrow's headlines)."""
+        d = self.plan.target_date
+        big = float(self.s.get("calendar.earnings_min_market_cap", 2e10))
+        amc = [r for r in col["reported"] if r["date"] == d.isoformat() and r.get("timing") == "AMC"
+               and (r["market_cap"] >= big or r["symbol"] in watch)][: int(self.s.get("calendar.after_hours_max", 5))]
+        if not amc:
+            return []
+        quotes = prices.extended_quotes([r["symbol"] for r in amc])
+        missing = [r["symbol"] for r in amc if r["symbol"] not in met]
+        if missing:                                   # reporters outside today's universe: closes from daily bars
+            try:
+                px = prices.fetch_daily(missing, self.http, period="3mo")
+                met = met | M.compute(px, d)
+            except Exception as e:
+                log.warning("after-hours closes unavailable: %s", e)
+        t_close = datetime.combine(d, dtime(16, 0), ET).timestamp()
+        t_end = datetime.combine(d, dtime(20, 0), ET).timestamp()        # after-hours session of `d` only
+        out = []
+        for r in amc:
+            sym, q = r["symbol"], quotes.get(r["symbol"]) or {}
+            close = (met.get(sym) or {}).get("close")
+            if close is None and q.get("regular_time") and datetime.fromtimestamp(q["regular_time"], ET).date() == d:
+                close = q["regular_price"]
+            ah = q.get("post_price") if t_close <= (q.get("post_time") or 0) <= t_end else None
+            heads = news.ticker_news(self.http, sym, r["name"], 4, datetime.fromtimestamp(t_close, timezone.utc))
+            out.append({"symbol": sym, "name": pretty_name(r["name"]), "fiscal_quarter": r.get("fiscal_quarter"),
+                        "eps_actual": r["eps_actual"], "eps_estimate": r["eps_estimate"],
+                        "eps_surprise_pct": r["eps_surprise_pct"], "market_cap_billion": round(r["market_cap"] / 1e9),
+                        "close": round(close, 2) if close else None, "after_hours_price": ah,
+                        "after_hours_change_pct": round((ah / close - 1) * 100, 2) if ah and close else None,
+                        "headlines": [{"title": h["title"], "source": h["source"]} for h in heads[:4]]})
+        self.health("after_hours", True, f"{len(out)} reports, {sum(1 for x in out if x['after_hours_price'])} with quotes")
+        return out
 
     def step_edit(self) -> None:
         res = self.load("research.json")
@@ -264,7 +306,7 @@ class Run:
         wv = datapack.strip_series(self.load("writer_view.json"))
         editor = self.load("editor.json")
         w = Writer(self.s, self.agy)
-        scenes = scene_plan(len(editor["stories"]))
+        scenes = scene_plan(len(editor["stories"]), len(wv.get("after_hours") or []))
         research = self.load("research.json")
         reference = {"writer": wv, "candidates": research["candidates"], "editor": editor.get("stories")}
         scripts = w.scripts(self.plan.session, wv, editor, scenes, reference)
@@ -347,13 +389,13 @@ class Run:
 
     # ---------- driver ----------
     def execute(self, start: str | None = None, only: str | None = None, force: bool = False) -> Path:
-        steps = STEPS
+        steps = self.STEPS
         if only:
             steps = [only]
         elif start:
-            steps = STEPS[STEPS.index(start):]
+            steps = steps[steps.index(start):]
         elif not force:
-            steps = [st for st in STEPS if st not in self.state["done"]]
+            steps = [st for st in steps if st not in self.state["done"]]
         if not steps:
             log.info("run %s already complete (use --force to redo)", self.plan.run_id)
             return self.dir / "upload"

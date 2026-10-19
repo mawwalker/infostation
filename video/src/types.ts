@@ -41,7 +41,12 @@ export type CryptoData = {
 
 export type CalendarData = {
   earnings: {date: string; symbol: string; name: string; time: string}[];
-  macro: {date: string; time: string; event: string; impact: string}[];
+  macro: {date: string; time: string; timeSub?: string; event: string; impact: string}[];
+};
+
+export type EarningsData = {
+  moveLabel: string;
+  rows: {symbol: string; name: string; eps: number | null; eps_est: number | null; surprise_pct: number | null; move_pct: number | null}[];
 };
 
 export type SceneBase = {
@@ -61,6 +66,7 @@ export type Scene =
   | (SceneBase & {type: 'movers'; data: {gainers: Mover[]; losers: Mover[]}})
   | (SceneBase & {type: 'story'; data: StoryData})
   | (SceneBase & {type: 'crypto'; data: CryptoData})
+  | (SceneBase & {type: 'earnings'; data: EarningsData})
   | (SceneBase & {type: 'calendar'; data: CalendarData})
   | (SceneBase & {type: 'outro'; data: {theme: string; disclaimer: string; cta: string}});
 
@@ -81,6 +87,7 @@ export type BriefingProps = {
   bgmVolume: number;
   tape: {label: string; change_pct: number}[];
   scenes: Scene[];
+  footnote?: string;            // cards only, e.g. "data as of …"
 };
 
 export type ThumbnailProps = {

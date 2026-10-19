@@ -43,8 +43,7 @@ def script_fallback(lang: str, session: str, view: dict, editor: dict, scenes: l
         elif t == "market":
             title = "大盘表现" if zh else "Market overview"
             parts = []
-            for sym in ("SPY", "QQQ", "DIA", "IWM"):
-                m = mk.get(sym)
+            for m in list(mk.values())[:4]:
                 if m:
                     parts.append(f"{m['name_zh' if zh else 'name_en']}{_pct(m['change_pct'], lang)}" if zh
                                  else f"the {m['name_en']} {_pct(m['change_pct'], lang)}")
@@ -78,6 +77,17 @@ def script_fallback(lang: str, session: str, view: dict, editor: dict, scenes: l
             title = "加密市场" if zh else "Crypto"
             text = (f"比特币报{btc['price']:.0f}美元，24小时{_pct(btc['change_pct'], lang)}。" if zh else
                     f"Bitcoin trades at {btc['price']:.0f} dollars, {_pct(btc['change_pct'], lang)} over 24 hours.") if btc else ""
+        elif t == "earnings":
+            title = "盘后财报" if zh else "After-hours earnings"
+            parts = []
+            for x in view.get("after_hours", [])[:3]:
+                eps = (f"每股收益{x['eps_actual']}美元，预期{x['eps_estimate']}美元" if zh else
+                       f"EPS of {x['eps_actual']} dollars versus {x['eps_estimate']} expected") if x.get("eps_actual") is not None else ""
+                move = (f"盘后{_pct(x['after_hours_change_pct'], lang)}" if zh else
+                        f"{_pct(x['after_hours_change_pct'], lang)} after hours") if x.get("after_hours_change_pct") is not None else ""
+                parts.append((f"{x['name']}：" + "，".join(p for p in (eps, move) if p)) if zh else
+                             f"{x['name']}: " + ", ".join(p for p in (eps, move) if p))
+            text = ("；".join(parts) + "。") if zh else (". ".join(parts) + ".")
         elif t == "calendar":
             title = "前瞻" if zh else "What's ahead"
             ev = view.get("calendar", {}).get("earnings", [])[:4]
@@ -100,4 +110,23 @@ def thread_fallback(scripts: dict[str, dict], cards: list[str]) -> dict[str, lis
                 text = s["narration"][:120] if lang == "zh" else s["narration"][:250]
                 posts.append({"text": text, "card": None})
         out[lang] = posts[:7]
+    return out
+
+
+def premarket_fallback(view: dict, cards: list[str]) -> dict[str, list[dict]]:
+    out = {}
+    for lang in ("zh", "en"):
+        zh = lang == "zh"
+        fut = [b for b in view.get("board", []) if b["symbol"].endswith("=F")][:3]
+        posts = [{"text": ("盘前速览 " + view["date"] + "：" + "，".join(f"{b['name_zh']}{_pct(b['change_pct'], lang)}" for b in fut) + "。")
+                  if zh else (f"Pre-market brief {view['date']}: " + ", ".join(f"{b['name_en']} {_pct(b['change_pct'], lang)}" for b in fut) + "."),
+                  "card": "board" if "board" in cards else None}]
+        for e in view.get("earnings_overnight", [])[:3]:
+            if e.get("premarket_change_pct") is not None:
+                posts.append({"text": f"${e['symbol']} 财报后盘前{_pct(e['premarket_change_pct'], lang)}。" if zh else
+                              f"${e['symbol']} {_pct(e['premarket_change_pct'], lang)} pre-market after earnings.", "card": None})
+        for ev in view.get("macro_today", [])[:3]:
+            posts.append({"text": f"今日 {ev['event']}：{ev['time_zh']}" if zh else f"Today {ev['event']}: {ev['time_en']}", "card": None})
+        posts.append({"text": "不构成投资建议。" if zh else "Not financial advice.", "card": None})
+        out[lang] = posts
     return out
