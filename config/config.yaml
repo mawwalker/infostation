@@ -1,9 +1,9 @@
 # InfoStation 主配置。密钥类放 .env，不要写在这里。
 
 brand:
-  name_zh: "美股情报站"
-  name_en: "Market Intel Daily"
-  handle: "@your_handle"          # 显示在视频角标和推文卡片上
+  name_zh: "SmartDeng"
+  name_en: "Signal & Street"
+  handle: "@marcus_s_deng"          # 显示在视频角标和推文卡片上
 
 languages: [zh, en]
 
