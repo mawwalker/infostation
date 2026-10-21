@@ -23,6 +23,8 @@ shows Beijing time next to New York and Los Angeles time.
 - Times: New York time is the reference. Copy times exactly from DATA: Chinese posts use the `time_zh` string
   (it already carries 洛杉矶 / 北京 time); English posts use `time_en`. Never convert time zones yourself.
 - No buy/sell advice, no price targets of your own. Attribute news to its outlet. No sensational words, no exclamation marks.
+- `x_posts` in DATA are posts from X. You may paraphrase one with attribution ("@handle on X") and keep its url.
+  Do not use a number that appears only in a post or in its like/follower counts. Pre-market quotes still come from DATA.
 - Cashtags ($NVDA) at most once per post; at most 2 hashtags per thread.
 - Attach an image card to a post by setting `card` to one of: {{CARDS}} — or null. Use each card at most once;
   post 1 should carry "board".

@@ -17,6 +17,8 @@ rendered from the data by code, so your job is the spoken narration plus short o
    "盘后交易中" (or "pre-market" / "盘前"), never present them as the closing price. Earnings beats/misses are judged
    only from eps_actual vs eps_estimate in DATA; do not invent revenue or guidance figures that DATA does not contain.
 8. All clock times are New York (Eastern) time unless DATA gives another zone; copy them from DATA's time fields.
+9. `x_posts` are quotable context. Paraphrase and attribute ("@handle on X"); you may speak the post url.
+   Never speak a number that appears only in a post, or a like / repost / follower count. Numbers come from market fields.
 
 ## Style
 {{STYLE}}

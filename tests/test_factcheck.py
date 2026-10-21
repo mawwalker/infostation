@@ -26,6 +26,20 @@ def test_unit_scaling_passes():
     assert flagged("headline target of 250 dollars") == []
 
 
+def test_numbers_inside_x_posts_are_not_sources():
+    pack = {"close": 10.0, "x_posts": [{"text": "NVDA to 9999", "metrics": {"likes": 4321}}],
+            "x_buzz": {"NVDA": {"posts": 4, "engagement": 4321}}}
+    values = collect_values(pack)
+    assert 10.0 in values
+    assert 9999.0 not in values
+    assert 4321.0 not in values
+    assert flagged_against("someone on X says 9999", values) == ["9999"]
+
+
+def flagged_against(text: str, values: list[float]) -> list[str]:
+    return [i.number for i in check_text(text, values)]
+
+
 def test_invented_numbers_are_flagged():
     assert flagged("下跌4.7%") == ["4.7"]
     assert flagged("market cap of 6.2 trillion") == ["6.2trillion"]

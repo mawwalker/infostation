@@ -11,7 +11,7 @@ from datetime import datetime, time, timezone
 import pandas as pd
 
 from . import store, timefmt
-from .collectors import crypto, events, news, prices
+from .collectors import crypto, events, news, prices, x as xsrc
 from .http import SourceError
 from .market_calendar import ET
 from .media import render
@@ -39,6 +39,32 @@ class PremarketRun(Run):
     STEPS = ["collect", "write", "render", "package"]
 
     def step_collect(self) -> None:
+        # A grokbot X handoff already saved the market snapshot. Don't hit the network again
+        # while the agent is filling inputs/x_posts.json.
+        resume = (self.state.get("handoff", {}).get("name") == "x_request" and (self.dir / "brief.json").exists())
+        if not resume:
+            self._collect_premarket()
+        self._merge_premarket_x()
+
+    def _merge_premarket_x(self) -> None:
+        brief = self.load("brief.json")
+        tickers = [e["symbol"] for e in brief.get("earnings_overnight", []) + brief.get("earnings_tonight", [])]
+        movers = brief.get("premarket_movers") or {}
+        for side in ("gainers", "losers"):
+            tickers += [m["symbol"] for m in movers.get(side, [])]
+        tickers += list(self.s.get("universe.watchlist") or [])
+        tickers += list(self.s.get("crypto.symbols") or [])
+        topics = ["premarket"]
+        if brief.get("earnings_overnight") or brief.get("earnings_tonight"):
+            topics.append("earnings")
+        if brief.get("macro_today"):
+            topics.append("macro")
+        posts = self.resolve_x(tickers, topics)
+        brief["x_posts"] = xsrc.posts_for_prompt(posts, int(self.s.get("x.max_posts", 25)))
+        brief["x_buzz"] = xsrc.buzz_by_ticker(posts)
+        self.save("brief.json", brief)
+
+    def _collect_premarket(self) -> None:
         s, http, d, prev = self.s, self.http, self.plan.target_date, self.plan.prev_date
         watch = set(s.get("universe.watchlist"))
         big = float(s.get("calendar.earnings_min_market_cap", 2e10))
@@ -159,7 +185,7 @@ class PremarketRun(Run):
 
     def step_write(self) -> None:
         brief = self.load("brief.json")
-        out = Writer(self.s, self.agy).premarket_threads(brief, self.card_ids(brief))
+        out = Writer(self.s, self.llm).premarket_threads(brief, self.card_ids(brief))
         self.health("llm_threads", out.pop("_source") == "llm", "")
         self.save("thread_check.json", out.pop("_factcheck"))
         self.save("threads.json", out)

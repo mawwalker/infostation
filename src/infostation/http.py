@@ -33,6 +33,8 @@ HOST_MIN_INTERVAL = {
     "apewisdom.io": 0.5,
     "api.coingecko.com": 1.5,
     "finnhub.io": 1.1,
+    "api.x.com": 1.0,
+    "api.twitter.com": 1.0,
 }
 
 

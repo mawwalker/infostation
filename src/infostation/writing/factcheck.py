@@ -34,6 +34,10 @@ class Issue:
         return f"{self.number!r} in “…{self.context}…”"
 
 
+# Social posts are quotable context. A figure that appears only inside them is not a market source.
+SKIP_KEYS = {"x_posts", "x_buzz"}
+
+
 def collect_values(data: object) -> list[float]:
     """All numeric values that appear in the data pack (numbers and digit runs inside strings)."""
     vals: list[float] = []
@@ -56,6 +60,8 @@ def collect_values(data: object) -> list[float]:
                     vals.append(v * UNIT_SCALE[um.group(1).lower()])
         elif isinstance(x, dict):
             for k, v in x.items():
+                if str(k) in SKIP_KEYS:
+                    continue
                 walk(v)
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and str(k).endswith("_billion"):
                     vals.append(float(v) * 1e9)

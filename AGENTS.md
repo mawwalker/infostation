@@ -1,7 +1,7 @@
 # InfoStation — agent guide
 
 Automated US-stock + crypto market intel → bilingual (zh/en) 16:9 videos + X threads. Uploading is manual.
-Read `docs/PLAN.md` for the design rationale.
+Read `docs/PLAN.md` for the design rationale. Grok Bot operators: `docs/GROKBOT.md`.
 
 ## Run it
 
@@ -11,6 +11,8 @@ uv run infostation run                    # full pipeline, session from config (
 uv run infostation run --session recap --date 2026-10-16 --force
 uv run infostation run --from write       # re-run from a step (keeps earlier outputs)
 uv run infostation run --only render      # one step
+uv run infostation run --llm grokbot      # file handoff instead of agy (see docs/GROKBOT.md)
+uv run infostation handoff status         # newest waiting request, or "status: idle"
 uv run infostation runs                   # list runs
 uv run infostation studio <run_id> --lang zh   # Remotion Studio on a run's props
 uv run pytest -q
@@ -26,9 +28,11 @@ Both write `runs/<id>/review.md`.
 
 ## Layout
 
-- `src/infostation/collectors/` — one module per free source; each degrades gracefully and never raises on a single-source failure
-- `src/infostation/analysis/` — metrics, funnel screener, data-pack views
-- `src/infostation/llm/agy.py` — the only LLM entry point: `agy -p --json-schema`, model fallback list in `config/config.yaml`
+- `src/infostation/collectors/` — one module per free source; each degrades gracefully and never raises on a single-source failure.
+  `collectors/x.py` reads `runs/<id>/inputs/x_posts.json` (optional inbox) and, only when `X_BEARER_TOKEN` is set, X API v2 recent search. No token is `skipped`, not a failure.
+- `src/infostation/analysis/` — metrics, funnel screener, data-pack views. X adds a per-ticker buzz term; it does not supply spoken numbers.
+- `src/infostation/llm/agy.py` — default LLM entry: `agy -p --json-schema`, model list in `config/config.yaml`
+- `src/infostation/llm/handoff.py` — `llm.provider: grokbot` (or `--llm grokbot` / `INFOSTATION_LLM`). Each call writes `runs/<id>/handoff/<name>.request.json` and the process exits 75 until the agent writes the response. Exit 76 means the response failed schema validation. Fact-check still runs.
 - `src/infostation/prompts/` — editor / script / thread prompts (content quality lives here)
 - `src/infostation/writing/factcheck.py` — every spoken number must trace to the data pack
 - `src/infostation/media/tts.py` — local IndexTTS-2.5 per sentence (repo `~/workspace/audio/index-tts`, own venv, run via
@@ -43,6 +47,8 @@ Both write `runs/<id>/review.md`.
 ## Rules when changing things
 
 - Numbers shown or spoken must come from collected data. Never let the LLM produce figures that bypass `factcheck`.
+  Figures that appear only in X posts (or like/follower counts) are not sources; `factcheck` skips the `x_posts` / `x_buzz` subtrees.
+- Premarket does not use IndexTTS, Whisper, or ComfyUI. `doctor` warns on a missing GPU instead of failing. Recap voice still needs a GPU (or `tts.provider: edge`).
 - A data source failing must not stop the pipeline: catch `SourceError`, log, record health via `Run.health()`.
 - Respect source limits: SEC needs `SEC_USER_AGENT` with an email and ≤10 req/s (throttled in `http.py`).
 - Keep prompts' hard rules (no buy/sell advice, attribute news, digits not words).

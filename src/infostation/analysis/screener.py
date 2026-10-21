@@ -6,8 +6,11 @@ import math
 
 def score_universe(metrics: dict[str, dict], social: dict[str, dict], earnings_syms: set[str],
                    caps: dict[str, float], min_cap: float, cooldown: set[str],
-                   exclude: set[str], watchlist: set[str] | None = None) -> list[dict]:
+                   exclude: set[str], watchlist: set[str] | None = None,
+                   x_buzz: dict[str, dict] | None = None) -> list[dict]:
+    """`x_buzz` maps ticker → {posts, engagement} from X. It is a ranking signal, not a quoted figure."""
     watchlist = watchlist or set()
+    x_buzz = x_buzz or {}
     rows = []
     for sym, m in metrics.items():
         if sym in exclude:
@@ -32,6 +35,10 @@ def score_universe(metrics: dict[str, dict], social: dict[str, dict], earnings_s
                 reasons.append(f"retail mentions {growth:.1f}x vs 24h ago")
             if soc["rank"] <= 10:
                 reasons.append(f"#{soc['rank']} on retail chatter board")
+        buzz = x_buzz.get(sym)
+        if buzz and buzz.get("posts"):
+            s += min(1.6, 0.5 * math.log2(1 + buzz["posts"]))
+            reasons.append(f"X posts {int(buzz['posts'])}")
         if sym in earnings_syms:
             s += 1.5
             reasons.append("reported earnings")

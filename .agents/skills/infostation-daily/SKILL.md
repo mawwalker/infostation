@@ -18,6 +18,10 @@ after 16:15 ET → `recap` (videos, ~35–40 min: agy ≈ 6 min, IndexTTS ≈ 10
 If it fails, read the last 40 lines of output, run `uv run infostation doctor`, fix the cause, then resume with
 `uv run infostation run --from <failed step>`. Do not delete `runs/` or `data/`.
 
+Exit 75 means grokbot mode is waiting on a file (`uv run infostation handoff status`), not that the run failed.
+Exit 76 means the response JSON failed validation — read the message, fix the file, submit again.
+The operator loop, X post schema, and CPU-only premarket setup are in `docs/GROKBOT.md`.
+
 ## 2. Check before reporting done
 
 Read `runs/<id>/review.md` and verify:

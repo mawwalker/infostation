@@ -13,7 +13,7 @@
 
 **时间约定**：一律以纽约时间（美东，ET）为准，交易所就按它运作，夏令时自动处理。视频、图卡和推文里出现的时间，中文版写成「美东 8:30（洛杉矶 5:30 / 北京 20:30）」，英文版写成「8:30 a.m. ET (5:30 a.m. PT)」，可在 `config.yaml` 的 `time_zones` 里改。洛杉矶永远比纽约晚 3 小时。
 
-设计思路与风险分析见 [docs/PLAN.md](docs/PLAN.md)；给 Agent 看的说明见 [AGENTS.md](AGENTS.md)。
+设计思路与风险分析见 [docs/PLAN.md](docs/PLAN.md)；给 Agent 看的说明见 [AGENTS.md](AGENTS.md)。在另一台没有 GPU 的机器上用 Grok Bot 自己跑流水线（文件交接，不调用 agy），见 [docs/GROKBOT.md](docs/GROKBOT.md)。
 
 ---
 
@@ -44,6 +44,8 @@ cp .env.example .env
 ```
 
 - **必须**：在 `.env` 里填 `SEC_USER_AGENT="你的名字 你的邮箱"`。SEC 要求请求带联系方式，否则可能封 IP。
+- **可选**：`X_BEARER_TOKEN` 打开 X API v2 最近搜索。不填就跳过（体检里是 ⏭️，不是失败）；帖子也可以由 agent 写到 `runs/<id>/inputs/x_posts.json`，见 [docs/GROKBOT.md](docs/GROKBOT.md)。
+- **可选**：`INFOSTATION_LLM=grokbot`（或 `config.yaml` 的 `llm.provider`，或 `--llm grokbot`）让选题和写稿改成文件交接，给没有 agy 的 agent 用。默认仍是 `agy`。
 - **建议**：改 `config/config.yaml` 的 `brand`，填频道中英文名和 @账号。
 - **建议**：往 `assets/music/` 放几首免版税背景音乐（YouTube 音频库里选“无需署名”的）。不放就是纯人声。
 - **可选**：选一个喜欢的音色。试听 `voices/audition/`，方法见下文「换配音音色」。
@@ -248,7 +250,9 @@ AUTO_FIX=1
 | `premarket.movers_min_change_pct` | 盘前涨跌超过多少算异动（默认 1.5%） |
 | `calendar.after_hours_max` | 复盘视频「盘后财报」段最多讲几家（默认 5） |
 | `screening.stories` | 每期主线数量（默认 3） |
+| `llm.provider` | `agy`（默认）或 `grokbot`（文件交接，见 docs/GROKBOT.md） |
 | `llm.models` | agy 使用的模型（默认 `gemini-4-argon-medium`） |
+| `x.accounts` | grokbot 的 X 搜索请求里要看的账号 |
 | `tts.voices` | 配音参考音频 |
 | `tts.tempo` | 语速（英文默认 1.07 倍） |
 | `video.fps` | 30 或 60（60 的渲染时间约翻倍） |

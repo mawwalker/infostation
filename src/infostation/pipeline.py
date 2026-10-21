@@ -14,10 +14,11 @@ import pandas as pd
 
 from . import store, timefmt
 from .analysis import datapack, metrics as M, screener
-from .collectors import crypto, events, news, options, prices, sec, social
+from .collectors import crypto, events, news, options, prices, sec, social, x as xsrc
 from .config import ASSETS_DIR, RUNS_DIR, Settings
-from .http import Http
-from .llm.agy import AgyClient
+from .http import Http, SourceError
+from .llm import make_client, resolve_provider
+from .llm.handoff import HandoffInvalid, HandoffPending
 from .market_calendar import ET, SessionPlan, upcoming_sessions
 from .media import comfy, render, tts
 from .publish import package
@@ -65,9 +66,8 @@ class Run:
             {"done": [], "health": {}, "started": datetime.now().isoformat(timespec="seconds")}
         self.http = Http(settings.sec_user_agent)
         self.public = self.dir / "public"
-        self.agy = AgyClient(models=settings.get("llm.models"), timeout_sec=int(settings.get("llm.timeout_sec", 300)),
-                             retries=int(settings.get("llm.retries", 2)), cli=settings.get("llm.cli", "agy"),
-                             log_dir=self.dir / "llm")
+        self.state["llm_provider"] = resolve_provider(settings)
+        self.llm = make_client(settings, self.dir)
 
     # ---------- persistence ----------
     def save(self, name: str, obj: Any) -> None:
@@ -79,17 +79,95 @@ class Run:
     def mark(self, step: str) -> None:
         if step not in self.state["done"]:
             self.state["done"].append(step)
+        self.state.pop("handoff", None)
         self.flush()
 
     def flush(self) -> None:
         self.state_path.write_text(json.dumps(self.state, ensure_ascii=False, indent=1))
 
-    def health(self, source: str, ok: bool, detail: str = "") -> None:
-        self.state["health"][source] = {"ok": ok, "detail": detail}
+    def health(self, source: str, ok: bool, detail: str = "", status: str | None = None) -> None:
+        if status is None:
+            status = "ok" if ok else "failed"
+        self.state["health"][source] = {"ok": ok, "status": status, "detail": detail}
 
     @property
     def langs(self) -> list[str]:
         return self.s.languages
+
+    def _x_window(self) -> tuple[datetime, datetime]:
+        """Previous close through now, or through the session's relevant end when the date is in the past."""
+        now = datetime.now(ET)
+        start = datetime.combine(self.plan.prev_date, dtime(16, 0), ET)
+        if self.plan.target_date == now.date() and now > start:
+            end = now
+        elif self.plan.session == "premarket":
+            end = datetime.combine(self.plan.target_date, dtime(9, 25), ET)
+        else:
+            end = datetime.combine(self.plan.target_date, dtime(20, 0), ET)
+        if end <= start:
+            end = start + timedelta(hours=18)
+        return start, end
+
+    def resolve_x(self, tickers: list[str], topics: list[str]) -> list[dict]:
+        """Load `inputs/x_posts.json` (or the inbox) and, when `X_BEARER_TOKEN` is set, recent-search.
+
+        Grokbot mode writes `handoff/x_request.json` and waits until a valid file is present,
+        unless the API search itself succeeded. A missing token is skipped, not a failure.
+        """
+        if not self.s.get("x.enabled", True):
+            self.health("x_posts", True, "disabled", status="skipped")
+            self.health("x_api", True, "disabled", status="skipped")
+            self.save("x_used.json", [])
+            return []
+        tickers = xsrc.dedupe_tickers(list(tickers))
+        output = self.dir / "inputs" / "x_posts.json"
+        provider = resolve_provider(self.s)
+        request_path = self.dir / "handoff" / "x_request.json"
+        start, end = self._x_window()
+        accounts = list(self.s.get("x.accounts") or xsrc.DEFAULT_ACCOUNTS)
+        if provider == "grokbot":
+            output.parent.mkdir(parents=True, exist_ok=True)
+            payload = xsrc.build_x_request(
+                run_id=self.plan.run_id, session=self.plan.session, tickers=tickers, accounts=accounts,
+                topics=topics, start=start, end=end, output_path=output)
+            request_path.parent.mkdir(parents=True, exist_ok=True)
+            request_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        file_posts: list[dict] | None = None
+        path = xsrc.find_x_posts_file(self.dir, self.s.get("x.inbox"), self.plan.run_id)
+        if path:
+            try:
+                file_posts = xsrc.load_x_posts(path)
+            except xsrc.XInputError as e:
+                self.health("x_posts", False, str(e)[:300], status="failed")
+                raise HandoffInvalid("x_request", request_path, path, str(e), kind="x_request") from e
+            self.health("x_posts", True, f"{len(file_posts)} posts from {path.name}", status="ok")
+        else:
+            self.health("x_posts", True, "no file", status="skipped")
+
+        token = self.s.env.get("X_BEARER_TOKEN")
+        api_posts: list[dict] = []
+        api_status = "skipped"
+        if not token:
+            self.health("x_api", True, "X_BEARER_TOKEN not set", status="skipped")
+        else:
+            try:
+                api_posts = xsrc.search_recent(
+                    self.http, token, tickers, accounts, start, end, int(self.s.get("x.max_posts", 25)))
+                api_status = "ok"
+                self.health("x_api", True, f"{len(api_posts)} posts", status="ok")
+            except SourceError as e:
+                api_status = "failed"
+                log.warning("x api failed: %s", e)
+                self.health("x_api", False, str(e)[:200], status="failed")
+
+        if provider == "grokbot" and file_posts is None and api_status != "ok":
+            log.info("waiting for X posts at %s", output)
+            raise HandoffPending("x_request", request_path, output, kind="x_request")
+
+        posts = xsrc.merge_posts(file_posts or [], api_posts, limit=int(self.s.get("x.max_posts", 25)))
+        self.save("x_used.json", posts)
+        return posts
 
     # ---------- steps ----------
     def step_collect(self) -> None:
@@ -184,7 +262,14 @@ class Run:
         cooldown = store.recently_featured(d.isoformat(), int(s.get("screening.cooldown_days", 2)))
         missing_caps = [w for w in watch if not caps.get(w)]
         caps.update({k: v for k, v in prices.market_caps(missing_caps).items() if v})
-        ranked = screener.score_universe(eligible, ape_map, rep, caps, min_cap, cooldown, exclude, watch)
+        mover_preview = screener.movers({k: v for k, v in eligible.items() if caps.get(k, 0) > 0}, caps,
+                                        float(s.get("screening.movers_min_market_cap", min_cap)), exclude)
+        x_tickers = xsrc.dedupe_tickers(
+            [row["symbol"] for side in mover_preview.values() for row in side] + list(watch)
+            + [r["symbol"] for r in col["apewisdom"][:20]] + list(s.get("crypto.symbols") or []))
+        x_posts = self.resolve_x(x_tickers, topics=["recap", "earnings"])
+        x_buzz = xsrc.buzz_by_ticker(x_posts)
+        ranked = screener.score_universe(eligible, ape_map, rep, caps, min_cap, cooldown, exclude, watch, x_buzz)
         top = ranked[: int(s.get("screening.candidates", 18))]
         syms = [r["symbol"] for r in top]
         log.info("candidates: %s", ", ".join(f"{r['symbol']}({r['score']})" for r in top))
@@ -204,15 +289,16 @@ class Run:
             heads = news.ticker_news(http, sym, names[sym], int(s.get("news.per_ticker", 8)), since)
             heads += news.finnhub_news(http, s.env.get("FINNHUB_API_KEY"), sym, d)
             n_news += len(heads)
+            mine = [p for p in x_posts if (p.get("matched") or {}).get("ticker") in {sym, sym.replace("-", ".")}]
             cv = datapack.candidate_view(sym, names[sym], r, met[sym], ape_map.get(sym), stw.get(sym), heads[:8],
-                                         sec_data.get(sym), sym in rep)
+                                         sec_data.get(sym), sym in rep,
+                                         x_posts=xsrc.posts_for_prompt(mine, 5), x_buzz=x_buzz.get(sym))
             if reddit.get(sym):
                 cv["reddit_top_posts"] = reddit[sym][:5]
             cands.append(cv)
         self.health("ticker_news", n_news > 0, f"{n_news} headlines")
 
-        mv = screener.movers({k: v for k, v in eligible.items() if caps.get(k, 0) > 0}, caps,
-                             float(s.get("screening.movers_min_market_cap", min_cap)), exclude)
+        mv = mover_preview
         for side in mv.values():
             for row in side:
                 row["name"] = names.get(row["symbol"], row["symbol"])
@@ -236,6 +322,7 @@ class Run:
             "after_hours": self._after_hours(col, met, watch),
             "calendar": {"earnings": col["earnings"][:14], "macro": with_times(self.s, col["macro"][:12])},
             "market_headlines": [{"title": h["title"], "source": h["source"]} for h in col["market_news"][:25]],
+            "x_posts": xsrc.posts_for_prompt(x_posts, int(s.get("x.max_posts", 25))),
         }
         self.save("research.json", {"base": base, "candidates": cands})
 
@@ -277,7 +364,7 @@ class Run:
     def step_edit(self) -> None:
         res = self.load("research.json")
         base, cands = res["base"], res["candidates"]
-        w = Writer(self.s, self.agy)
+        w = Writer(self.s, self.llm)
         n = int(self.s.get("screening.stories", 3))
         view = datapack.strip_series(datapack.llm_view(base, cands))
         editor = w.editor(self.plan.session, self.plan.target_date.isoformat(), view, n)
@@ -305,7 +392,7 @@ class Run:
     def step_write(self) -> None:
         wv = datapack.strip_series(self.load("writer_view.json"))
         editor = self.load("editor.json")
-        w = Writer(self.s, self.agy)
+        w = Writer(self.s, self.llm)
         scenes = scene_plan(len(editor["stories"]), len(wv.get("after_hours") or []))
         research = self.load("research.json")
         reference = {"writer": wv, "candidates": research["candidates"], "editor": editor.get("stories")}
@@ -396,6 +483,14 @@ class Run:
             steps = steps[steps.index(start):]
         elif not force:
             steps = [st for st in steps if st not in self.state["done"]]
+        if force and resolve_provider(self.s) == "grokbot":
+            self.state.pop("handoff", None)
+            shutil.rmtree(self.dir / "llm", ignore_errors=True)
+            handoff_dir = self.dir / "handoff"
+            if handoff_dir.exists():
+                for stale in list(handoff_dir.glob("*.response.json")) + list(handoff_dir.glob("*.error.txt")):
+                    stale.unlink()
+            self.flush()
         if not steps:
             log.info("run %s already complete (use --force to redo)", self.plan.run_id)
             return self.dir / "upload"
@@ -405,6 +500,17 @@ class Run:
             t0 = time.time()
             try:
                 fn()
+            except (HandoffPending, HandoffInvalid) as e:
+                self.state["handoff"] = {
+                    "status": "invalid" if isinstance(e, HandoffInvalid) else "waiting",
+                    "step": st, "name": e.name, "kind": e.kind,
+                    "request": str(e.request), "response": str(e.response),
+                    "detail": getattr(e, "detail", ""),
+                }
+                self.flush()
+                store.record_run(self.plan.run_id, self.plan.session, self.plan.target_date.isoformat(), f"waiting:{st}",
+                                 [], self.state["started"], None, {"handoff": e.name})
+                raise
             except Exception:
                 self.flush()
                 store.record_run(self.plan.run_id, self.plan.session, self.plan.target_date.isoformat(), f"failed:{st}",
