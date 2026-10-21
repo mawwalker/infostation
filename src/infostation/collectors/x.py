@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -192,15 +193,12 @@ def normalize_post(post: dict, allowed: set[str] | None = None) -> dict:
 
 
 def posts_for_prompt(posts: list[dict], limit: int = 20) -> list[dict]:
-    """Short, quotable slice for the writer. Likes and follower counts stay in the object but are not facts."""
+    """Short, quotable slice for the writer. Order is the caller's (see `merge_posts`).
 
-    def engagement(p: dict) -> int:
-        m = p.get("metrics") or {}
-        return sum(int(m.get(k) or 0) for k in ("likes", "reposts", "replies", "quotes"))
-
-    ranked = sorted(posts, key=engagement, reverse=True)[:limit]
+    Likes and follower counts stay in the object but are not facts.
+    """
     out = []
-    for p in ranked:
+    for p in posts[:limit]:
         item = dict(p)
         item["text"] = (p.get("text") or "")[:500]
         out.append(item)
@@ -237,13 +235,55 @@ def find_x_posts_file(run_dir: Path, inbox: str | None, run_id: str) -> Path | N
     return None
 
 
+def _count(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def post_score(post: dict) -> float:
+    """Engagement, with reposts weighted higher, plus a follower term that does not swamp likes."""
+    metrics = post.get("metrics") or {}
+    followers = _count((post.get("author") or {}).get("followers"))
+    return (_count(metrics.get("likes")) + 2 * _count(metrics.get("reposts"))
+            + _count(metrics.get("replies")) + _count(metrics.get("quotes"))
+            + math.log1p(max(followers, 0)))
+
+
+def _ticker_key(post: dict) -> str:
+    return str((post.get("matched") or {}).get("ticker") or "").upper()
+
+
 def merge_posts(*groups: list[dict], limit: int) -> list[dict]:
+    """Dedupe by id (earlier group wins), then rank before the cap.
+
+    Score is engagement plus log followers. Tickers are taken round-robin so one
+    name cannot fill `limit` and push out an older high-signal post.
+    """
     by_id: dict[str, dict] = {}
     for group in groups:
         for post in group:
             by_id.setdefault(post["id"], post)
-    posts = sorted(by_id.values(), key=lambda p: p.get("created_at") or "", reverse=True)
-    return posts[:limit]
+
+    def rank_key(post: dict) -> tuple:
+        return (post_score(post), post.get("created_at") or "")
+
+    buckets: dict[str, list[dict]] = {}
+    for post in by_id.values():
+        buckets.setdefault(_ticker_key(post), []).append(post)
+    for rows in buckets.values():
+        rows.sort(key=rank_key, reverse=True)
+    order = sorted(buckets, key=lambda ticker: rank_key(buckets[ticker][0]), reverse=True)
+    picked: list[dict] = []
+    while len(picked) < limit and any(buckets[ticker] for ticker in order):
+        for ticker in order:
+            if not buckets[ticker]:
+                continue
+            picked.append(buckets[ticker].pop(0))
+            if len(picked) >= limit:
+                break
+    return picked
 
 
 def build_x_request(*, run_id: str, session: str, tickers: list[str], accounts: list[str], topics: list[str],

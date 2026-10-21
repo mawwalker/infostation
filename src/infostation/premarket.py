@@ -13,6 +13,7 @@ import pandas as pd
 from . import store, timefmt
 from .collectors import crypto, events, news, prices, x as xsrc
 from .http import SourceError
+from .llm import resolve_provider
 from .market_calendar import ET
 from .media import render
 from .pipeline import Run, pretty_name, with_times
@@ -33,6 +34,60 @@ LABELS = {
            "losers": "Pre-market losers", "calendar": "TODAY", "earnings": "Reporting today"},
 }
 AS_OF = {"zh": "数据截至 ", "en": "Data as of "}
+WHEN = {
+    "BMO": {"zh": "盘前", "en": "before the open"},
+    "AMC": {"zh": "盘后", "en": "after the close"},
+    "DURING": {"zh": "盘中", "en": "during the session"},
+    "TBD": {"zh": "时间待定", "en": "time not set"},
+}
+
+
+def split_reports(reps: list[dict], prev: str, day: str, now: datetime) -> tuple[list[dict], list[dict]]:
+    """Overnight prints vs names still to report.
+
+    A today row whose EPS is already in counts as reported even when Nasdaq has dropped
+    the clock (timing falls back to TBD). Upcoming rows are today's names with no EPS yet.
+    """
+
+    def out_already(r: dict) -> bool:
+        if r.get("eps_actual") is not None:
+            return True
+        rt = r.get("report_time_et")
+        return bool(rt and datetime.fromisoformat(rt) <= now)
+
+    def into_the_open(r: dict) -> bool:
+        if r.get("date") == prev and r.get("timing") == "AMC":
+            return out_already(r)
+        if r.get("date") != day or r.get("timing") in ("AMC", "DURING"):
+            return False
+        return out_already(r)
+
+    overnight = [r for r in reps if into_the_open(r)]
+    seen = {id(r) for r in overnight}
+    tonight = [r for r in reps if r.get("date") == day and id(r) not in seen and r.get("timing") != "DURING"
+               and r.get("eps_actual") is None]
+    return overnight, tonight
+
+
+def report_times(settings, row: dict) -> dict[str, str]:
+    """Viewer clocks for a report. A real timestamp wins; otherwise the session label."""
+    rt = row.get("report_time_et")
+    if rt:
+        dt = datetime.fromisoformat(rt)
+        return {f"time_{lang}": timefmt.multi(dt, lang, timefmt.zones_for(settings, lang)) for lang in ("zh", "en")}
+    lab = WHEN.get(row.get("timing") or "TBD", WHEN["TBD"])
+    return {"time_zh": lab["zh"], "time_en": lab["en"]}
+
+
+def llm_health_detail(settings, source: str) -> str:
+    if source != "llm":
+        return source or "template"
+    provider = resolve_provider(settings)
+    model = ""
+    if provider == "agy":
+        models = settings.get("llm.models") or []
+        model = str(models[0]) if models else ""
+    return f"{provider} {model}".strip()
 
 
 class PremarketRun(Run):
@@ -63,6 +118,7 @@ class PremarketRun(Run):
         brief["x_posts"] = xsrc.posts_for_prompt(posts, int(self.s.get("x.max_posts", 25)))
         brief["x_buzz"] = xsrc.buzz_by_ticker(posts)
         self.save("brief.json", brief)
+        self._x_merged = True
 
     def _collect_premarket(self) -> None:
         s, http, d, prev = self.s, self.http, self.plan.target_date, self.plan.prev_date
@@ -91,12 +147,7 @@ class PremarketRun(Run):
         self.health("premarket_board", len(board) >= 0.7 * len(board_cfg), f"{len(board)}/{len(board_cfg)}")
 
         reps = events.reports(http, [prev, d], watch, big)
-        def out_already(r: dict) -> bool:          # results published (EPS in) or the scheduled time has passed
-            return r["eps_actual"] is not None or bool(r["report_time_et"] and datetime.fromisoformat(r["report_time_et"]) <= now)
-
-        overnight = [r for r in reps if ((r["date"] == prev.isoformat() and r["timing"] == "AMC")
-                                         or (r["date"] == d.isoformat() and r["timing"] == "BMO")) and out_already(r)]
-        tonight = [r for r in reps if r["date"] == d.isoformat() and r not in overnight and r["timing"] != "DURING"]
+        overnight, tonight = split_reports(reps, prev.isoformat(), d.isoformat(), now)
         self.health("earnings", bool(reps), f"{len(overnight)} reported overnight, {len(tonight)} still to report today")
 
         last = store.query("SELECT run_id, stories FROM runs WHERE session = 'recap' AND status = 'done' "
@@ -131,7 +182,8 @@ class PremarketRun(Run):
             earn_rows.append({"symbol": r["symbol"], "name": pretty_name(r["name"]), "timing": r["timing"],
                               "report_date": r["date"], "fiscal_quarter": r.get("fiscal_quarter"),
                               "eps_actual": r["eps_actual"], "eps_estimate": r["eps_estimate"],
-                              "eps_surprise_pct": r["eps_surprise_pct"], "market_cap_billion": round(r["market_cap"] / 1e9),
+                              "eps_basis": r.get("eps_basis"), "eps_surprise_pct": r["eps_surprise_pct"],
+                              "market_cap_billion": round(r["market_cap"] / 1e9),
                               "previous_close": q["regular_price"] if q else None,
                               "premarket_price": q["pre_price"] if q else None,
                               "premarket_change_pct": q["pre_change_pct"] if q else None})
@@ -167,7 +219,8 @@ class PremarketRun(Run):
             "earnings_overnight": earn_rows,
             "premarket_movers": {"gainers": gainers, "losers": losers},
             "earnings_tonight": [{"symbol": r["symbol"], "name": pretty_name(r["name"]), "timing": r["timing"],
-                                  "eps_estimate": r["eps_estimate"], "market_cap_billion": round(r["market_cap"] / 1e9)}
+                                  "eps_estimate": r["eps_estimate"], "eps_basis": r.get("eps_basis"),
+                                  "market_cap_billion": round(r["market_cap"] / 1e9), **report_times(s, r)}
                                  for r in tonight[:8]],
             "macro_today": with_times(s, macro),
             "crypto": {"assets": cr["assets"], "fear_greed": cr["fear_greed"], "global": cr["global"]},
@@ -184,9 +237,14 @@ class PremarketRun(Run):
                 + (["calendar"] if brief["macro_today"] or brief["earnings_tonight"] else []))
 
     def step_write(self) -> None:
+        # Collect may already be marked done (a resumed run, or a handoff that stopped before mark).
+        # Merging here is what gets a newly submitted x_posts.json into the thread.
+        if not getattr(self, "_x_merged", False):
+            self._merge_premarket_x()
         brief = self.load("brief.json")
         out = Writer(self.s, self.llm).premarket_threads(brief, self.card_ids(brief))
-        self.health("llm_threads", out.pop("_source") == "llm", "")
+        source = out.pop("_source")
+        self.health("llm_threads", source == "llm", llm_health_detail(self.s, source))
         self.save("thread_check.json", out.pop("_factcheck"))
         self.save("threads.json", out)
 
@@ -209,7 +267,8 @@ class PremarketRun(Run):
             scenes.append(scene("movers", "movers", {"gainers": mv["gainers"], "losers": mv["losers"]}))
         if brief["macro_today"] or brief["earnings_tonight"]:
             cal = {"macro": brief["macro_today"],
-                   "earnings": [{"date": d.isoformat(), "symbol": e["symbol"], "name": e["name"], "time": e["timing"]}
+                   "earnings": [{"date": d.isoformat(), "symbol": e["symbol"], "name": e["name"],
+                                 "time": e.get(f"time_{lang}") or e["timing"]}
                                 for e in brief["earnings_tonight"]]}
             scenes.append(scene("calendar", "calendar", render.calendar_data(s, cal, lang)))
         return {

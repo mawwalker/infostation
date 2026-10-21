@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from infostation.collectors.x import (
-    XInputError, buzz_by_ticker, cashtag, load_x_posts, parse_x_posts, search_recent,
+    XInputError, buzz_by_ticker, cashtag, load_x_posts, merge_posts, parse_x_posts, search_recent,
 )
 from infostation.config import load_settings
 from infostation.llm.handoff import HandoffInvalid, HandoffPending
@@ -183,3 +183,33 @@ def test_token_success_does_not_wait_for_a_file(tmp_path, monkeypatch):
     assert posts[0]["id"] == "99"
     assert run.state["health"]["x_api"]["status"] == "ok"
     assert (run.dir / "handoff" / "x_request.json").exists()
+
+
+def _post(i: int, ticker: str, likes: int, followers: int, created: str, text: str | None = None) -> dict:
+    return {
+        "id": str(i),
+        "url": f"https://x.com/a/status/{i}",
+        "author": {"handle": "a", "name": "A", "followers": followers},
+        "created_at": created,
+        "text": text or ticker,
+        "metrics": {"likes": likes, "reposts": 0, "replies": 0, "quotes": 0},
+        "matched": {"ticker": ticker},
+    }
+
+
+def test_merge_ranks_by_signal_and_ticker_before_the_cap():
+    fresh = [_post(i, "AAA", 1, 10, f"2026-10-21T12:{i:02d}:00Z") for i in range(25)]
+    evening = _post(100, "NVDA", 500, 800_000, "2026-10-20T22:00:00Z", text="NVDA guide")
+    api_copy = dict(evening, text="stale api copy", metrics={"likes": 1, "reposts": 0, "replies": 0, "quotes": 0})
+    merged = merge_posts([evening], [api_copy, *fresh], limit=25)
+    ids = [p["id"] for p in merged]
+    assert "100" in ids
+    assert merged[ids.index("100")]["text"] == "NVDA guide"   # the file copy wins the id
+    assert sum(1 for p in merged if p["matched"]["ticker"] == "AAA") == 24
+
+    same = [_post(i, "AAA", 0, 1, f"2026-10-21T08:{i:02d}:00Z") for i in range(30)]
+    same[0]["metrics"]["likes"] = 1000
+    same[0]["created_at"] = "2026-10-20T20:00:00Z"
+    picked = merge_posts(same, limit=25)
+    assert [p["id"] for p in picked][0] == "0"
+    assert len(picked) == 25

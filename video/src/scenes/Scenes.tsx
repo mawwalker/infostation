@@ -290,7 +290,7 @@ const Earnings: React.FC<Ctx & {s: Extract<Scene, {type: 'earnings'}>}> = ({p, s
         <Panel delay={6} style={{padding: '10px 28px'}}>
           <div style={{display: 'flex', gap: 18, height: 44, alignItems: 'center', fontSize: 19, color: C.faint, fontWeight: 600}}>
             <div style={{width: 300}} />
-            <div style={{width: 250}}>{p.labels.eps} · {p.labels.est}</div>
+            <div style={{width: 280}}>{p.labels.eps} · {p.labels.est}</div>
             <div style={{width: 150, textAlign: 'right'}}>{p.labels.surprise}</div>
             <div style={{flex: 1, textAlign: 'right'}}>{s.data.moveLabel}</div>
           </div>
@@ -304,9 +304,12 @@ const Earnings: React.FC<Ctx & {s: Extract<Scene, {type: 'earnings'}>}> = ({p, s
                   <div style={{fontSize: 34, fontWeight: 800}}>{r.symbol}</div>
                   <div style={{fontSize: 19, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{r.name}</div>
                 </div>
-                <div style={{width: 250, fontSize: 28, fontVariantNumeric: 'tabular-nums'}}>
-                  <span style={{fontWeight: 800}}>{eps(r.eps)}</span>
-                  <span style={{color: C.sub, fontSize: 22}}> / {eps(r.eps_est)}</span>
+                <div style={{width: 280, fontVariantNumeric: 'tabular-nums'}}>
+                  <div style={{fontSize: 28}}>
+                    <span style={{fontWeight: 800}}>{eps(r.eps)}</span>
+                    <span style={{color: C.sub, fontSize: 22}}> / {eps(r.eps_est)}</span>
+                  </div>
+                  {r.eps_basis ? <div style={{fontSize: 16, color: C.faint, fontWeight: 600}}>{r.eps_basis}</div> : null}
                 </div>
                 <div style={{width: 150, textAlign: 'right', fontSize: 28, fontWeight: 700, color: sCol, fontVariantNumeric: 'tabular-nums'}}>
                   {r.surprise_pct === null ? '—' : fmtPct(r.surprise_pct, 1)}

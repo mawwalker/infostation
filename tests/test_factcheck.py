@@ -40,6 +40,12 @@ def flagged_against(text: str, values: list[float]) -> list[str]:
     return [i.number for i in check_text(text, values)]
 
 
+def test_urls_and_handles_are_not_numbers():
+    text = "see https://x.com/TestDesk/status/123456789012345 and @user123 — closed at 220.50"
+    assert flagged(text) == ["220.50"]
+    assert flagged("链接 https://example.com/v1.2/item 下跌4.7%") == ["4.7"]
+
+
 def test_invented_numbers_are_flagged():
     assert flagged("下跌4.7%") == ["4.7"]
     assert flagged("market cap of 6.2 trillion") == ["6.2trillion"]

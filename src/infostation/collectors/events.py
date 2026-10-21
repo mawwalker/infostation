@@ -49,27 +49,55 @@ def _num(x) -> float | None:
     return v if math.isfinite(v) else None
 
 
+def eps_basis_from_summary(payload: dict | None) -> str | None:
+    """Yahoo `earningsHistory.defaultMethodology`: `gaap` or `nongaap` (adjusted). Missing → no label."""
+    try:
+        history = (payload or {})["quoteSummary"]["result"][0]["earningsHistory"]
+        method = history.get("defaultMethodology")
+    except (AttributeError, KeyError, IndexError, TypeError):
+        return None
+    return {"gaap": "GAAP", "nongaap": "adjusted"}.get(str(method).strip().lower())
+
+
+def _yahoo_eps_basis(ticker) -> str | None:
+    try:
+        payload = ticker._analysis._fetch(["earningsHistory"])
+    except Exception as e:
+        log.debug("yahoo eps basis %s failed: %s", getattr(ticker, "ticker", "?"), e)
+        return None
+    return eps_basis_from_summary(payload)
+
+
 def _yahoo_report(sym: str, d: date) -> dict:
     """Report time and EPS for `sym` on `d` from Yahoo's earnings calendar (Nasdaq drops the time once reported)."""
     try:
-        ed = yf.Ticker(sym).get_earnings_dates(limit=8)
+        ticker = yf.Ticker(sym)
     except Exception as e:
         log.debug("yahoo earnings dates %s failed: %s", sym, e)
         return {}
-    if ed is None or ed.empty:
-        return {}
-    for ts, row in ed.iterrows():
-        t = ts.tz_convert(ET) if ts.tzinfo else ts.tz_localize(ET)
-        if t.date() != d:
-            continue
-        hm = t.time()
-        timing = "BMO" if hm < time(9, 30) else "AMC" if hm >= time(16, 0) else "DURING"
-        if hm == time(0, 0):
-            timing = "TBD"
-        return {"timing": timing, "report_time_et": t.isoformat() if timing != "TBD" else None,
-                "eps_actual": _num(row.get("Reported EPS")), "eps_estimate": _num(row.get("EPS Estimate")),
-                "surprise_pct": _num(row.get("Surprise(%)"))}
-    return {}
+    try:
+        ed = ticker.get_earnings_dates(limit=8)
+    except Exception as e:
+        log.debug("yahoo earnings dates %s failed: %s", sym, e)
+        ed = None
+    basis = _yahoo_eps_basis(ticker)
+    found: dict = {}
+    if ed is not None and not ed.empty:
+        for ts, row in ed.iterrows():
+            t = ts.tz_convert(ET) if ts.tzinfo else ts.tz_localize(ET)
+            if t.date() != d:
+                continue
+            hm = t.time()
+            timing = "BMO" if hm < time(9, 30) else "AMC" if hm >= time(16, 0) else "DURING"
+            if hm == time(0, 0):
+                timing = "TBD"
+            found = {"timing": timing, "report_time_et": t.isoformat() if timing != "TBD" else None,
+                     "eps_actual": _num(row.get("Reported EPS")), "eps_estimate": _num(row.get("EPS Estimate")),
+                     "surprise_pct": _num(row.get("Surprise(%)"))}
+            break
+    if basis:
+        found["eps_basis"] = basis
+    return found
 
 
 def reports(http: Http, days: list[date], keep: set[str], min_cap: float) -> list[dict]:
@@ -104,7 +132,7 @@ def reports(http: Http, days: list[date], keep: set[str], min_cap: float) -> lis
             surprise = (eps - est) / abs(est) * 100
         return {"date": d.isoformat(), "symbol": sym, "name": r.get("name", ""), "timing": timing,
                 "report_time_et": y.get("report_time_et"), "market_cap": cap,
-                "eps_actual": eps, "eps_estimate": est,
+                "eps_actual": eps, "eps_estimate": est, "eps_basis": y.get("eps_basis"),
                 "eps_surprise_pct": round(surprise, 2) if surprise is not None else None,
                 "fiscal_quarter": r.get("fiscalQuarterEnding")}
 

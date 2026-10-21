@@ -82,6 +82,14 @@ done
 
 `handoff submit --file -` reads stdin. `handoff list` shows every recent run. `handoff status` with no `--run` prints the newest waiting run, or `status: idle`.
 
+`handoff submit --name <handoff>` fills that handoff instead of whichever one is active. Use it to replace `inputs/x_posts.json` after the thread handoff is already waiting:
+
+```bash
+uv run infostation handoff submit --run "$RUN" --name x_request --file /tmp/x_posts.json
+```
+
+With no `--name`, a file that is a posts object or a bare array is stored as X posts. A `{zh, en}` object still goes to the active LLM handoff. Writing posts this way does not clear the thread handoff. The next `run` merges those posts into the brief even when `collect` is already marked done.
+
 You can also write the response file yourself (the path from `handoff path --response`) and re-run; `submit` only validates and copies it into place. A schema error is printed and saved to `handoff/<name>.error.txt`.
 
 After exit 0:
@@ -90,7 +98,50 @@ After exit 0:
 2. `upload/zh/x_thread.md` and `upload/en/x_thread.md`, with `[image: cards/...]` pointing at `upload/<lang>/cards/`.
 3. Post before 09:30 ET. Pre-market quotes go stale at the open.
 
-A finished LLM answer is cached at `runs/<id>/llm/<name>/result.json`. Re-running the step reuses it. Delete that file (or `uv run infostation run --force`) to ask again. `--force` also drops `*.response.json` and refetches market data; it does not delete `inputs/x_posts.json`.
+A finished LLM answer is cached at `runs/<id>/llm/<name>/result.json`. Re-running the step reuses it. Delete that file (or `uv run infostation run --force`) to ask again. `--force` clears `state.json` progress (`done` and `finished`) from the step you name onward, drops `*.response.json`, and refetches market data. It does not delete `inputs/x_posts.json`. If that forced run stops on a handoff, the next plain `run` still executes the steps that were cleared, including collect and render.
+
+## Scheduled premarket, without systemd
+
+This box has no systemd unit. The agent is the scheduler: on weekdays, wake at 07:30 America/New_York and run the premarket loop through to exit 0.
+
+Pass `--date` as that New York calendar date on every command in the loop. If the loop is still going at 09:30 ET, dropping `--date` would start a different run id. If the date is not an NYSE session, skip it and wait for the next one.
+
+```bash
+# date and seconds until the next weekday 07:30 ET
+python3 - <<'PY'
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+ET = ZoneInfo("America/New_York")
+now = datetime.now(ET)
+target = now.replace(hour=7, minute=30, second=0, microsecond=0)
+if now >= target:
+    target += timedelta(days=1)
+while target.weekday() >= 5:          # Saturday, Sunday
+    target += timedelta(days=1)
+print(target.date().isoformat(), int((target - now).total_seconds()))
+PY
+```
+
+Sleep that many seconds, set `DATE` to the printed date, then the same loop:
+
+```bash
+export INFOSTATION_LLM=grokbot
+export SEC_USER_AGENT="Your Name you@example.com"
+DATE=2026-10-22
+RUN=${DATE}_premarket
+while true; do
+  uv run infostation run --session premarket --date "$DATE" --llm grokbot && break
+  code=$?
+  if [ "$code" -eq 75 ] || [ "$code" -eq 76 ]; then
+    uv run infostation handoff status --run "$RUN"
+    # read the request, write JSON, then handoff submit (use --name x_request for posts)
+  else
+    exit "$code"
+  fi
+done
+```
+
+After exit 0, read `review.md`, post the thread, and schedule the next weekday 07:30 ET the same way.
 
 There may be more than one LLM handoff per session: the draft, a fact-check rewrite (`*_rev1`), and a shortening pass if a post is over the X weighted limit. Keep answering until exit 0. Fact-check still runs on your JSON. A number that is not in the market data comes back as another handoff (or as `❌` in `review.md` when rewrites are exhausted).
 

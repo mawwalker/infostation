@@ -200,8 +200,109 @@ def test_grokbot_premarket_dry_run(tmp_path: Path, monkeypatch):
     assert "⏭️" in review
     check = json.loads((tmp_path / run_id / "thread_check.json").read_text(encoding="utf-8"))
     assert check["zh"] == [] and check["en"] == []
+    health = json.loads((tmp_path / run_id / "state.json").read_text(encoding="utf-8"))["health"]["llm_threads"]
+    assert health["ok"] is True
+    assert health["detail"] == "grokbot"
     assert (tmp_path / run_id / "upload" / "zh" / "x_thread.md").exists()
     assert (tmp_path / run_id / "upload" / "en" / "x_thread.md").exists()
     listed = runner.invoke(app, ["handoff", "list"])
     assert run_id in listed.stdout
     assert "done" in listed.stdout
+
+
+def _seed_run(tmp_path: Path, done: list[str], posts: bool) -> Path:
+    run_id = "2026-10-21_premarket"
+    d = tmp_path / run_id
+    (d / "handoff").mkdir(parents=True)
+    brief = {
+        "session": "premarket", "date": "2026-10-21", "prev_session": "2026-10-20",
+        "as_of": {"zh": "美东 7:30", "en": "7:30 a.m. ET"},
+        "board": [{"symbol": "ES=F", "name_zh": "标普期货", "name_en": "S&P Futures",
+                   "last": 5100.25, "change_pct": 0.35, "unit": "price"}],
+        "earnings_overnight": [], "premarket_movers": {"gainers": [], "losers": []},
+        "earnings_tonight": [], "macro_today": [],
+        "crypto": {"assets": [], "fear_greed": None, "global": {}},
+        "market_headlines": [], "previous_recap_theme": None,
+    }
+    (d / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+    (d / "state.json").write_text(json.dumps({
+        "done": done, "health": {}, "started": "2026-10-21T07:00:00",
+        "finished": "2026-10-21T07:10:00",
+    }), encoding="utf-8")
+    if posts:
+        (d / "inputs").mkdir()
+        (d / "inputs" / "x_posts.json").write_text(json.dumps(POSTS), encoding="utf-8")
+    return d
+
+
+def test_force_clears_done_so_a_resume_collects_again(tmp_path: Path, monkeypatch):
+    _install_stubs(monkeypatch, tmp_path)
+    d = _seed_run(tmp_path, ["collect", "render"], posts=False)
+    forced = _run("--force")
+    assert forced.exit_code == EXIT_WAITING, forced.stdout
+    state = json.loads((d / "state.json").read_text(encoding="utf-8"))
+    assert state["done"] == []
+    assert "finished" not in state
+    assert state["handoff"]["name"] == "x_request"
+
+    good_posts = tmp_path / "x_posts.json"
+    good_posts.write_text(json.dumps(POSTS), encoding="utf-8")
+    assert runner.invoke(app, ["handoff", "submit", "--run", d.name, "--file", str(good_posts)]).exit_code == 0
+    resumed = _run()
+    assert resumed.exit_code == EXIT_WAITING, resumed.stdout
+    thread_req = json.loads((d / "handoff" / "premarket_thread.request.json").read_text(encoding="utf-8"))
+    assert "9999" in thread_req["prompt"]
+    state = json.loads((d / "state.json").read_text(encoding="utf-8"))
+    assert "collect" in state["done"]
+    assert "render" not in state["done"]
+
+
+def test_write_merges_x_posts_when_collect_is_already_done(tmp_path: Path, monkeypatch):
+    _install_stubs(monkeypatch, tmp_path)
+    d = _seed_run(tmp_path, ["collect", "write", "render", "package"], posts=True)
+    resumed = _run("--from", "write", "--force")
+    assert resumed.exit_code == EXIT_WAITING, resumed.stdout
+    state = json.loads((d / "state.json").read_text(encoding="utf-8"))
+    assert state["done"] == ["collect"]
+    assert state["handoff"]["name"] == "premarket_thread"
+    brief = json.loads((d / "brief.json").read_text(encoding="utf-8"))
+    assert brief["x_posts"][0]["text"].startswith("NVDA discussion")
+    prompt = json.loads((d / "handoff" / "premarket_thread.request.json").read_text(encoding="utf-8"))["prompt"]
+    assert "9999" in prompt
+
+
+def test_submit_x_posts_while_a_thread_handoff_is_active(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("infostation.cli.RUNS_DIR", tmp_path)
+    run_id = "2026-10-21_premarket"
+    d = tmp_path / run_id
+    (d / "handoff").mkdir(parents=True)
+    request = d / "handoff" / "premarket_thread.request.json"
+    request.write_text(json.dumps({"schema": SCHEMA}), encoding="utf-8")
+    response = d / "handoff" / "premarket_thread.response.json"
+    (d / "state.json").write_text(json.dumps({
+        "done": ["collect"], "health": {},
+        "handoff": {
+            "status": "waiting", "step": "write", "name": "premarket_thread", "kind": "llm",
+            "request": str(request), "response": str(response),
+        },
+    }), encoding="utf-8")
+    posts = tmp_path / "posts.json"
+    posts.write_text(json.dumps(POSTS), encoding="utf-8")
+
+    named = runner.invoke(app, ["handoff", "submit", "--run", run_id, "--name", "x_request", "--file", str(posts)])
+    assert named.exit_code == 0, named.stdout
+    assert json.loads((d / "inputs" / "x_posts.json").read_text(encoding="utf-8"))["posts"][0]["id"] == "99"
+    state = json.loads((d / "state.json").read_text(encoding="utf-8"))
+    assert state["handoff"]["name"] == "premarket_thread"
+    assert state["handoff"]["status"] == "waiting"
+
+    # A posts file with no --name is detected as x_request, not checked against the thread schema.
+    (d / "inputs" / "x_posts.json").unlink()
+    detected = runner.invoke(app, ["handoff", "submit", "--run", run_id, "--file", str(posts)])
+    assert detected.exit_code == 0, detected.stdout
+    assert (d / "inputs" / "x_posts.json").exists()
+    assert json.loads((d / "state.json").read_text(encoding="utf-8"))["handoff"]["name"] == "premarket_thread"
+
+    wrong = runner.invoke(app, ["handoff", "submit", "--run", run_id, "--name", "premarket_thread", "--file", str(posts)])
+    assert wrong.exit_code == EXIT_INVALID
+    assert "zh" in wrong.stdout

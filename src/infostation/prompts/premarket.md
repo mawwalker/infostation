@@ -6,6 +6,7 @@ shows Beijing time next to New York and Los Angeles time.
 ## What to cover (only what DATA contains; skip a part when DATA has nothing for it)
 1. Post 1 — the hook: the single most important thing for today's open, plus where index futures stand.
 2. Overnight earnings (`earnings_overnight`): EPS vs estimate and the pre-market move, biggest move first.
+   When `eps_basis` is present, name it (GAAP, or adjusted / 调整后). Leave the basis out when the field is missing.
 3. Pre-market movers (`premarket_movers`) with the reason from their headlines, attributed to the outlet. If no
    headline explains a move, say the cause is not clear yet. Do not repeat a stock already covered in post 2.
 4. Today's schedule: macro releases (`macro_today`) and notable earnings after today's close (`earnings_tonight`).

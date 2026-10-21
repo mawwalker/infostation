@@ -150,10 +150,20 @@ def build_props(s: Settings, lang: str, view: dict, render_extra: dict, script: 
     }
 
 
+def eps_basis_label(code: str | None, lang: str) -> str | None:
+    """Card label for Yahoo's EPS methodology. Empty when the feed did not say."""
+    if code == "GAAP":
+        return "GAAP"
+    if code == "adjusted":
+        return "调整后" if lang == "zh" else "adjusted"
+    return None
+
+
 def earnings_data(rows: list[dict], side: str, lang: str) -> dict:
     """Earnings table for the video / cards. side = after_hours | premarket (which extended-hours move to show)."""
     return {"moveLabel": LABELS[lang]["move"] if side == "after_hours" else ("盘前涨跌" if lang == "zh" else "Pre-market"),
             "rows": [{"symbol": r["symbol"], "name": r["name"], "eps": r.get("eps_actual"), "eps_est": r.get("eps_estimate"),
+                      "eps_basis": eps_basis_label(r.get("eps_basis"), lang),
                       "surprise_pct": r.get("eps_surprise_pct"), "move_pct": r.get(f"{side}_change_pct")} for r in rows[:6]]}
 
 

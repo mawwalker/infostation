@@ -46,7 +46,7 @@ export type CalendarData = {
 
 export type EarningsData = {
   moveLabel: string;
-  rows: {symbol: string; name: string; eps: number | null; eps_est: number | null; surprise_pct: number | null; move_pct: number | null}[];
+  rows: {symbol: string; name: string; eps: number | null; eps_est: number | null; eps_basis?: string | null; surprise_pct: number | null; move_pct: number | null}[];
 };
 
 export type SceneBase = {

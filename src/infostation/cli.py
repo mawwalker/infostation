@@ -36,7 +36,7 @@ def run(
     on: Optional[str] = typer.Option(None, "--date", help="trading day YYYY-MM-DD (default: decided by session)"),
     start: Optional[str] = typer.Option(None, "--from", help="re-run from this step onward"),
     only: Optional[str] = typer.Option(None, help="run a single step"),
-    force: bool = typer.Option(False, help="redo all steps even if the run already completed"),
+    force: bool = typer.Option(False, help="clear saved progress and redo steps"),
     langs: Optional[str] = typer.Option(None, help="comma-separated languages, e.g. zh or zh,en"),
     llm: Optional[str] = typer.Option(None, "--llm", help="agy | grokbot (overrides config and INFOSTATION_LLM)"),
     verbose: bool = typer.Option(False, "-v"),
@@ -288,36 +288,52 @@ def handoff_path(
     typer.echo(target)
 
 
+def _looks_like_x_posts(raw: object) -> bool:
+    """A posts file, not a thread. Threads are objects with zh/en and no posts array."""
+    if isinstance(raw, list):
+        return True
+    return isinstance(raw, dict) and "posts" in raw and "zh" not in raw and "en" not in raw
+
+
 @handoff_app.command("submit")
 def handoff_submit(
     run: Optional[str] = typer.Option(None, "--run"),
     file: Optional[str] = typer.Option(None, "--file", help="response JSON path; '-' reads stdin"),
+    name: Optional[str] = typer.Option(None, "--name", help="handoff to fill; default is the active one, or x_request when the file is posts"),
 ) -> None:
     """Validate a response and place it where the pipeline will read it on the next run."""
     d = _pick_run(run, required=True)
     assert d is not None
     st = _read_state(d)
     hof = st.get("handoff") or {}
-    if hof.get("status") not in {"waiting", "invalid"}:
-        raise typer.BadParameter(f"{d.name} is not waiting on a handoff")
-    request, response = Path(hof["request"]), Path(hof["response"])
+    active = hof if hof.get("status") in {"waiting", "invalid"} else {}
     text = sys.stdin.read() if file in (None, "-") else Path(file).read_text(encoding="utf-8")
     try:
         raw = json.loads(text)
     except json.JSONDecodeError as e:
         typer.echo(f"invalid handoff response: not JSON ({e})")
         raise typer.Exit(EXIT_INVALID)
-    kind = hof.get("kind") or "llm"
+    target = name or ("x_request" if _looks_like_x_posts(raw) else active.get("name"))
+    if not target:
+        raise typer.BadParameter(f"{d.name} is not waiting on a handoff; pass --name")
+    kind = "x_request" if target == "x_request" or (active.get("name") == target and active.get("kind") == "x_request") else "llm"
     if kind == "x_request":
+        response = Path(active["response"]) if active.get("name") == target and active.get("response") else d / "inputs" / "x_posts.json"
         try:
             doc = parse_x_posts(raw)
         except XInputError as e:
-            _note_error(d, hof, str(e))
+            _note_error(d, {"name": "x_request"}, str(e))
             typer.echo(str(e))
             raise typer.Exit(EXIT_INVALID)
         response.parent.mkdir(parents=True, exist_ok=True)
         response.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        err_name = "x_request"
     else:
+        if active.get("name") == target and active.get("request"):
+            request, response = Path(active["request"]), Path(active["response"])
+        else:
+            request = d / "handoff" / f"{target}.request.json"
+            response = d / "handoff" / f"{target}.response.json"
         if not request.exists():
             typer.echo(f"request file is missing: {request}")
             raise typer.Exit(EXIT_INVALID)
@@ -325,19 +341,22 @@ def handoff_submit(
         errors = schema_errors(raw, schema or {})
         if not schema or errors:
             detail = "schema validation failed:\n" + "\n".join(f"- {e}" for e in (errors or ["request has no schema"]))
-            _note_error(d, hof, detail)
+            _note_error(d, {"name": target}, detail)
             typer.echo(detail)
             raise typer.Exit(EXIT_INVALID)
+        response.parent.mkdir(parents=True, exist_ok=True)
         response.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
-        cached = d / "llm" / str(hof.get("name")) / "result.json"
+        cached = d / "llm" / str(target) / "result.json"
         if cached.exists():
             cached.unlink()
-    err = d / "handoff" / f"{hof.get('name', '')}.error.txt"
-    err.unlink(missing_ok=True)
-    hof["status"] = "waiting"
-    hof.pop("detail", None)
-    st["handoff"] = hof
-    (d / "state.json").write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+        err_name = target
+    (d / "handoff" / f"{err_name}.error.txt").unlink(missing_ok=True)
+    # A side file (posts while a thread handoff is open) must not replace that handoff.
+    if active.get("name") == target:
+        hof["status"] = "waiting"
+        hof.pop("detail", None)
+        st["handoff"] = hof
+        (d / "state.json").write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
     typer.echo(f"accepted → {response}")
     typer.echo("Re-run the same `infostation run --llm grokbot` command to continue.")
 

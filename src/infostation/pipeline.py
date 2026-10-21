@@ -354,7 +354,8 @@ class Run:
             heads = news.ticker_news(self.http, sym, r["name"], 4, datetime.fromtimestamp(t_close, timezone.utc))
             out.append({"symbol": sym, "name": pretty_name(r["name"]), "fiscal_quarter": r.get("fiscal_quarter"),
                         "eps_actual": r["eps_actual"], "eps_estimate": r["eps_estimate"],
-                        "eps_surprise_pct": r["eps_surprise_pct"], "market_cap_billion": round(r["market_cap"] / 1e9),
+                        "eps_basis": r.get("eps_basis"), "eps_surprise_pct": r["eps_surprise_pct"],
+                        "market_cap_billion": round(r["market_cap"] / 1e9),
                         "close": round(close, 2) if close else None, "after_hours_price": ah,
                         "after_hours_change_pct": round((ah / close - 1) * 100, 2) if ah and close else None,
                         "headlines": [{"title": h["title"], "source": h["source"]} for h in heads[:4]]})
@@ -482,14 +483,27 @@ class Run:
         elif start:
             steps = steps[steps.index(start):]
         elif not force:
-            steps = [st for st in steps if st not in self.state["done"]]
-        if force and resolve_provider(self.s) == "grokbot":
+            steps = [st for st in steps if st not in self.state.get("done", [])]
+        if force:
+            # A handoff stops the step before mark(), so an old "done" list would make the
+            # next plain resume skip collect (and the X merge) and render.
+            done = list(self.state.get("done") or [])
+            if only:
+                done = [st for st in done if st != only]
+            elif start:
+                drop = set(self.STEPS[self.STEPS.index(start):])
+                done = [st for st in done if st not in drop]
+            else:
+                done = []
+            self.state["done"] = done
+            self.state.pop("finished", None)
             self.state.pop("handoff", None)
-            shutil.rmtree(self.dir / "llm", ignore_errors=True)
-            handoff_dir = self.dir / "handoff"
-            if handoff_dir.exists():
-                for stale in list(handoff_dir.glob("*.response.json")) + list(handoff_dir.glob("*.error.txt")):
-                    stale.unlink()
+            if resolve_provider(self.s) == "grokbot":
+                shutil.rmtree(self.dir / "llm", ignore_errors=True)
+                handoff_dir = self.dir / "handoff"
+                if handoff_dir.exists():
+                    for stale in list(handoff_dir.glob("*.response.json")) + list(handoff_dir.glob("*.error.txt")):
+                        stale.unlink()
             self.flush()
         if not steps:
             log.info("run %s already complete (use --force to redo)", self.plan.run_id)
