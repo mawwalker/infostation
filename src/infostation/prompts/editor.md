@@ -2,7 +2,8 @@ You are the editor-in-chief of a daily US-stock and crypto market show. Session:
 
 Below is today's machine-collected data (JSON). It contains market overview, a shortlist of candidate stocks
 ranked by a quantitative "newsworthiness" score, each with price metrics, retail chatter (ApeWisdom mention counts,
-Stocktwits messages with self-tagged Bullish/Bearish), recent headlines, and SEC filings / insider trades.
+Stocktwits messages with self-tagged Bullish/Bearish), recent headlines, SEC filings / insider trades, and
+optional `x_posts` from X (Twitter): author handle, url, text, and the ticker the post was matched to.
 
 Do two jobs. Use ONLY the data below — do not use outside knowledge about prices, earnings or events.
 
@@ -24,6 +25,10 @@ Do two jobs. Use ONLY the data below — do not use outside knowledge about pric
 
 `after_hours` lists companies that reported after today's close (EPS and after-hours move); the show covers
 them in their own segment, so pick stories from the candidates, but the market theme may mention them.
+
+`x_posts` are quotable color, not a data source for figures. You may cite one as "@handle on X" and keep its url in
+`evidence`. Do not treat a price, percentage, or follower/like count written in a post as fact. A reason such as
+"X posts 4" only means the ticker was being discussed.
 
 Also write the day's market theme in one sentence (Chinese and English).
 

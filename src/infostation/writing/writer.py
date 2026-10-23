@@ -7,7 +7,8 @@ import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
 from ..config import PROMPTS_DIR, Settings
-from ..llm.agy import AgyClient, LLMError
+from ..llm import LLMClient, resolve_provider
+from ..llm.agy import LLMError
 from . import factcheck, templates
 
 log = logging.getLogger(__name__)
@@ -128,7 +129,7 @@ def _fill(template: str, **kw: str) -> str:
 
 
 class Writer:
-    def __init__(self, settings: Settings, client: AgyClient):
+    def __init__(self, settings: Settings, client: LLMClient):
         self.s = settings
         self.client = client
         self.brand = {"zh": settings.get("brand.name_zh"), "en": settings.get("brand.name_en")}
@@ -163,7 +164,9 @@ class Writer:
         """`reference` = everything numbers may be traced to (defaults to writer_view)."""
         self._reference = reference if reference is not None else writer_view
         langs = self.s.languages
-        if self.s.get("llm.parallel", True) and len(langs) > 1:
+        # Grokbot serves one request file at a time; a parallel call would publish two and abandon one.
+        sequential = resolve_provider(self.s) == "grokbot"
+        if self.s.get("llm.parallel", True) and len(langs) > 1 and not sequential:
             with ThreadPoolExecutor(max_workers=len(langs)) as ex:
                 futs = {lang: ex.submit(self._script_with_check, lang, session, writer_view, editor, scenes) for lang in langs}
                 return {lang: f.result() for lang, f in futs.items()}

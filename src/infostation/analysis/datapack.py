@@ -32,7 +32,8 @@ def market_rows(board_cfg: list[dict], met: dict[str, dict], prices: pd.DataFram
 
 
 def candidate_view(sym: str, name: str, row: dict, m: dict, ape: dict | None, st: dict | None,
-                   heads: list[dict], sec: dict | None, reported: bool) -> dict:
+                   heads: list[dict], sec: dict | None, reported: bool,
+                   x_posts: list[dict] | None = None, x_buzz: dict | None = None) -> dict:
     return {
         "symbol": sym, "name": name, "score": row["score"], "reasons": row["reasons"],
         "metrics": {k: m.get(k) for k in ("close", "prev_close", "change_pct", "change_5d_pct", "change_1m_pct",
@@ -46,6 +47,8 @@ def candidate_view(sym: str, name: str, row: dict, m: dict, ape: dict | None, st
                       for h in heads],
         "sec": sec or None,
         "earnings_reported": reported,
+        "x_buzz": x_buzz,
+        "x_posts": x_posts or [],
     }
 
 

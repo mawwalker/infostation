@@ -40,13 +40,13 @@ export type CryptoData = {
 };
 
 export type CalendarData = {
-  earnings: {date: string; symbol: string; name: string; time: string}[];
+  earnings: {date: string; symbol: string; name: string; time: string; timeSub?: string}[];
   macro: {date: string; time: string; timeSub?: string; event: string; impact: string}[];
 };
 
 export type EarningsData = {
   moveLabel: string;
-  rows: {symbol: string; name: string; eps: number | null; eps_est: number | null; surprise_pct: number | null; move_pct: number | null}[];
+  rows: {symbol: string; name: string; eps: number | null; eps_est: number | null; eps_basis?: string | null; surprise_pct: number | null; move_pct: number | null}[];
 };
 
 export type SceneBase = {

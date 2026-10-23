@@ -150,11 +150,30 @@ def build_props(s: Settings, lang: str, view: dict, render_extra: dict, script: 
     }
 
 
+def eps_basis_label(code: str | None, lang: str) -> str | None:
+    """Card label for Yahoo's EPS methodology. Empty when the feed did not say."""
+    if code == "GAAP":
+        return "GAAP"
+    if code == "adjusted":
+        return "调整后" if lang == "zh" else "adjusted"
+    return None
+
+
 def earnings_data(rows: list[dict], side: str, lang: str) -> dict:
     """Earnings table for the video / cards. side = after_hours | premarket (which extended-hours move to show)."""
     return {"moveLabel": LABELS[lang]["move"] if side == "after_hours" else ("盘前涨跌" if lang == "zh" else "Pre-market"),
             "rows": [{"symbol": r["symbol"], "name": r["name"], "eps": r.get("eps_actual"), "eps_est": r.get("eps_estimate"),
+                      "eps_basis": eps_basis_label(r.get("eps_basis"), lang),
                       "surprise_pct": r.get("eps_surprise_pct"), "move_pct": r.get(f"{side}_change_pct")} for r in rows[:6]]}
+
+
+def _split_clock(text: str) -> tuple[str, str | None]:
+    """`美东 16:05（洛杉矶 …）` / `4:05 p.m. ET (1:05 p.m. PT)` → main clock plus the other zones."""
+    for open_, close in (("（", "）"), ("(", ")")):
+        if open_ in text and text.endswith(close):
+            main, _, rest = text.partition(open_)
+            return main.strip(), rest[:-len(close)].strip() or None
+    return text, None
 
 
 def calendar_data(s: Settings, cal: dict, lang: str) -> dict:
@@ -165,9 +184,15 @@ def calendar_data(s: Settings, cal: dict, lang: str) -> dict:
         main, sub = timefmt.pair(datetime.fromisoformat(e["datetime_et"]), lang, zones)
         macro.append({"date": e["date"], "time": main, "timeSub": sub, "event": e["event"],
                       "impact": (IMPACT_ZH if zh else IMPACT_EN).get(e["impact"], e["impact"])})
-    return {"earnings": [{"date": e["date"], "symbol": e["symbol"], "name": e["name"],
-                          "time": TIMING_ZH.get(e["time"], e["time"]) if zh else e["time"]} for e in cal.get("earnings", [])],
-            "macro": macro}
+    earnings = []
+    for e in cal.get("earnings", []):
+        label = TIMING_ZH.get(e["time"], e["time"]) if zh else e["time"]
+        main, sub = _split_clock(label)
+        row = {"date": e["date"], "symbol": e["symbol"], "name": e["name"], "time": main}
+        if sub:
+            row["timeSub"] = sub
+        earnings.append(row)
+    return {"earnings": earnings, "macro": macro}
 
 
 def thumbnail_props(lang: str, script: dict, props: dict, view: dict) -> dict:

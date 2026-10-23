@@ -290,7 +290,7 @@ const Earnings: React.FC<Ctx & {s: Extract<Scene, {type: 'earnings'}>}> = ({p, s
         <Panel delay={6} style={{padding: '10px 28px'}}>
           <div style={{display: 'flex', gap: 18, height: 44, alignItems: 'center', fontSize: 19, color: C.faint, fontWeight: 600}}>
             <div style={{width: 300}} />
-            <div style={{width: 250}}>{p.labels.eps} · {p.labels.est}</div>
+            <div style={{width: 280}}>{p.labels.eps} · {p.labels.est}</div>
             <div style={{width: 150, textAlign: 'right'}}>{p.labels.surprise}</div>
             <div style={{flex: 1, textAlign: 'right'}}>{s.data.moveLabel}</div>
           </div>
@@ -304,9 +304,12 @@ const Earnings: React.FC<Ctx & {s: Extract<Scene, {type: 'earnings'}>}> = ({p, s
                   <div style={{fontSize: 34, fontWeight: 800}}>{r.symbol}</div>
                   <div style={{fontSize: 19, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{r.name}</div>
                 </div>
-                <div style={{width: 250, fontSize: 28, fontVariantNumeric: 'tabular-nums'}}>
-                  <span style={{fontWeight: 800}}>{eps(r.eps)}</span>
-                  <span style={{color: C.sub, fontSize: 22}}> / {eps(r.eps_est)}</span>
+                <div style={{width: 280, fontVariantNumeric: 'tabular-nums'}}>
+                  <div style={{fontSize: 28}}>
+                    <span style={{fontWeight: 800}}>{eps(r.eps)}</span>
+                    <span style={{color: C.sub, fontSize: 22}}> / {eps(r.eps_est)}</span>
+                  </div>
+                  {r.eps_basis ? <div style={{fontSize: 16, color: C.faint, fontWeight: 600}}>{r.eps_basis}</div> : null}
                 </div>
                 <div style={{width: 150, textAlign: 'right', fontSize: 28, fontWeight: 700, color: sCol, fontVariantNumeric: 'tabular-nums'}}>
                   {r.surprise_pct === null ? '—' : fmtPct(r.surprise_pct, 1)}
@@ -342,7 +345,8 @@ const Calendar: React.FC<Ctx & {s: Extract<Scene, {type: 'calendar'}>}> = ({p, s
     <div style={{display: 'flex', gap: 36}}>
       <Panel title={p.labels.earnings} delay={8} style={{flex: 1.1}}>
         {s.data.earnings.slice(0, 9).map((e, i) => (
-          <Row key={i} delay={14 + i * 3} cells={[e.date.slice(5), e.symbol, e.name, e.time]} widths={[90, 110, 0, 70]} />
+          <Row key={i} delay={14 + i * 3} cells={[e.date.slice(5), e.symbol, e.name, e.time]}
+            widths={[80, 108, e.timeSub ? 168 : 0, e.timeSub ? 0 : 80]} sub={e.timeSub ? {3: e.timeSub} : undefined} />
         ))}
         {!s.data.earnings.length ? <div style={{color: C.sub, fontSize: 24}}>—</div> : null}
       </Panel>

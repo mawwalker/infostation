@@ -8,6 +8,8 @@ Rules:
 - Readability over density: at most 3 numbers per post. One idea per post. Posts with a card can lean on the image.
 - Use cashtags for stocks ($NVDA) at most once per post; at most 2 hashtags in the whole thread.
 - Every number must come from the DATA block or the scripts below. No buy/sell advice. Attribute news to its outlet.
+- `x_posts` may be paraphrased with attribution ("@handle on X") and the post url. A number that appears only in a
+  post, or a like/repost/follower count, is not a source.
 - Attach an image card to a post by setting `card` to one of: {{CARDS}} — or null. Use each card at most once.
 - Times are New York time: Chinese posts copy `time_zh` (it already shows 洛杉矶 / 北京 time), English posts copy
   `time_en`. Never convert time zones yourself. After-hours moves are "盘后" / "after hours", not closing prices.

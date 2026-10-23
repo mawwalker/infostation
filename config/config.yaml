@@ -19,6 +19,9 @@ time_zones:
   en: [ET, PT]
 
 llm:
+  # agy = 调用本机 agy CLI（默认，行为与以前相同）
+  # grokbot = 每次 LLM 调用写成 runs/<id>/handoff/*.request.json，由外部 agent 填回复后继续。见 docs/GROKBOT.md
+  provider: agy
   cli: agy
   # 按顺序尝试；每个模型重试 `retries` 次仍失败才换下一个。`agy models` 可查看可用模型
   # 需要兜底时可在后面追加，例如 [gemini-4-argon-medium, gemini-4-argon-high]
@@ -153,6 +156,15 @@ comfy:
   url: http://192.168.0.111:8090
   model: krea2
   timeout_sec: 180
+
+# X（Twitter）帖子，用来给筛选和写稿补充「谁在说什么」。数字仍只认行情数据包，不认推文里的数字。
+# 1) agent 把帖子写到 runs/<id>/inputs/x_posts.json（grokbot 模式会先写出 handoff/x_request.json，说明要搜什么）
+# 2) 可选：环境变量 X_BEARER_TOKEN 存在时才走 API v2 recent search；没有 token 记为 skipped，不算失败
+x:
+  enabled: true
+  accounts: [DeItaone, FirstSquawk]   # 盘中快讯账号，grokbot 的 x_request 会列出它们
+  max_posts: 25
+  # inbox: data/inbox                 # 可选。也认 <inbox>/<run_id>.json 和 <inbox>/x_posts.json
 
 factcheck:
   max_rewrites: 1

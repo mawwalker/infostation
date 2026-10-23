@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 
 _NUM = re.compile(r"(?<![A-Za-z0-9_.])(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)")
+_URL = re.compile(r"https?://\S+")
+_HANDLE = re.compile(r"(?<!\w)@[\w.]+")
 UNIT_SCALE = {
     "万亿": 1e12, "亿": 1e8, "万": 1e4, "千": 1e3,
     "trillion": 1e12, "billion": 1e9, "million": 1e6, "thousand": 1e3,
@@ -32,6 +34,10 @@ class Issue:
 
     def __str__(self) -> str:
         return f"{self.number!r} in “…{self.context}…”"
+
+
+# Social posts are quotable context. A figure that appears only inside them is not a market source.
+SKIP_KEYS = {"x_posts", "x_buzz"}
 
 
 def collect_values(data: object) -> list[float]:
@@ -56,6 +62,8 @@ def collect_values(data: object) -> list[float]:
                     vals.append(v * UNIT_SCALE[um.group(1).lower()])
         elif isinstance(x, dict):
             for k, v in x.items():
+                if str(k) in SKIP_KEYS:
+                    continue
                 walk(v)
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and str(k).endswith("_billion"):
                     vals.append(float(v) * 1e9)
@@ -88,6 +96,8 @@ def _matches(spoken: float, decimals: int, scale: float, values: list[float], pc
 
 
 def check_text(text: str, values: list[float]) -> list[Issue]:
+    # Status ids and digits inside @handles are not spoken figures. Prompts ask to keep the post url.
+    text = _HANDLE.sub(" ", _URL.sub(" ", text))
     issues: list[Issue] = []
     for m in _NUM.finditer(text):
         raw = m.group(1)

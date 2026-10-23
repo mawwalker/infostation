@@ -89,6 +89,38 @@ def build(run_dir: Path, lang: str, script: dict, props: dict, view: dict, posts
     return up
 
 
+def _health_mark(v: dict) -> str:
+    status = v.get("status")
+    if status == "skipped":
+        return "⏭️"
+    if status == "failed" or not v.get("ok"):
+        return "❌"
+    return "✅"
+
+
+def _x_lines(run_dir: Path) -> list[str]:
+    path = run_dir / "x_used.json"
+    lines = ["", "## X posts"]
+    if not path.exists():
+        lines.append("- (none supplied)")
+        return lines
+    posts = json.loads(path.read_text(encoding="utf-8"))
+    if not posts:
+        lines.append("- (none)")
+        return lines
+    lines.append("Supplied to screening and writing. Figures inside a post are not market data.")
+    for p in posts:
+        author = p.get("author") or {}
+        handle = author.get("handle") or "?"
+        matched = p.get("matched") or {}
+        tag = matched.get("ticker") or matched.get("topic") or ""
+        text = " ".join((p.get("text") or "").split())
+        if len(text) > 160:
+            text = text[:157] + "..."
+        lines.append(f"- @{handle} {tag} {p.get('url', '')} — {text}".rstrip())
+    return lines
+
+
 def review_md(run_dir: Path, scripts: dict[str, dict], threads: dict[str, list[dict]], health: dict,
               editor: dict, durations: dict[str, float]) -> Path:
     lines = [f"# Review — {run_dir.name}", ""]
@@ -108,7 +140,8 @@ def review_md(run_dir: Path, scripts: dict[str, dict], threads: dict[str, list[d
     lines += ["", "## Durations"] + [f"- {k}: {v / 60:.1f} min" for k, v in durations.items()]
     lines += ["", "## Data sources"]
     for k, v in health.items():
-        lines.append(f"- {'✅' if v.get('ok') else '❌'} {k}: {v.get('detail', '')}")
+        lines.append(f"- {_health_mark(v)} {k}: {v.get('detail', '')}")
+    lines += _x_lines(run_dir)
     lines += ["", "## Before publishing", "- [ ] Watch the first 30 seconds and one story segment of each video",
               "- [ ] Check the thumbnail text reads correctly", "- [ ] Paste title / description / tags from `youtube.md`",
               "- [ ] Upload `captions.srt` as subtitles", "- [ ] Post `x_thread.md` with the attached cards", ""]
@@ -147,7 +180,8 @@ def premarket_review(run_dir: Path, brief: dict, threads: dict[str, list[dict]],
         lines += [f"  - {i}" for i in issues]
     lines += ["", "## Data sources"]
     for k, v in health.items():
-        lines.append(f"- {'✅' if v.get('ok') else '❌'} {k}: {v.get('detail', '')}")
+        lines.append(f"- {_health_mark(v)} {k}: {v.get('detail', '')}")
+    lines += _x_lines(run_dir)
     lines += ["", "## Before posting", "- [ ] Read both threads once (pre-market quotes move fast — post before 9:30 ET)",
               "- [ ] Post `x_thread.md` with the attached cards", ""]
     p = run_dir / "review.md"
