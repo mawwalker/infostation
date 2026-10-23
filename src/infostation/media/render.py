@@ -167,6 +167,15 @@ def earnings_data(rows: list[dict], side: str, lang: str) -> dict:
                       "surprise_pct": r.get("eps_surprise_pct"), "move_pct": r.get(f"{side}_change_pct")} for r in rows[:6]]}
 
 
+def _split_clock(text: str) -> tuple[str, str | None]:
+    """`美东 16:05（洛杉矶 …）` / `4:05 p.m. ET (1:05 p.m. PT)` → main clock plus the other zones."""
+    for open_, close in (("（", "）"), ("(", ")")):
+        if open_ in text and text.endswith(close):
+            main, _, rest = text.partition(open_)
+            return main.strip(), rest[:-len(close)].strip() or None
+    return text, None
+
+
 def calendar_data(s: Settings, cal: dict, lang: str) -> dict:
     zh = lang == "zh"
     zones = timefmt.zones_for(s, lang)
@@ -175,9 +184,15 @@ def calendar_data(s: Settings, cal: dict, lang: str) -> dict:
         main, sub = timefmt.pair(datetime.fromisoformat(e["datetime_et"]), lang, zones)
         macro.append({"date": e["date"], "time": main, "timeSub": sub, "event": e["event"],
                       "impact": (IMPACT_ZH if zh else IMPACT_EN).get(e["impact"], e["impact"])})
-    return {"earnings": [{"date": e["date"], "symbol": e["symbol"], "name": e["name"],
-                          "time": TIMING_ZH.get(e["time"], e["time"]) if zh else e["time"]} for e in cal.get("earnings", [])],
-            "macro": macro}
+    earnings = []
+    for e in cal.get("earnings", []):
+        label = TIMING_ZH.get(e["time"], e["time"]) if zh else e["time"]
+        main, sub = _split_clock(label)
+        row = {"date": e["date"], "symbol": e["symbol"], "name": e["name"], "time": main}
+        if sub:
+            row["timeSub"] = sub
+        earnings.append(row)
+    return {"earnings": earnings, "macro": macro}
 
 
 def thumbnail_props(lang: str, script: dict, props: dict, view: dict) -> dict:

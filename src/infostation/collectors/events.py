@@ -104,6 +104,10 @@ def reports(http: Http, days: list[date], keep: set[str], min_cap: float) -> lis
     """Companies reporting on `days` (symbol in `keep` or market cap ≥ min_cap), with timing and results so far.
 
     timing: BMO (before 9:30 ET) | AMC (after 16:00 ET) | DURING | TBD. EPS fields are None until reported.
+
+    Nasdaq leaves last year's EPS in `eps` and `surprise` as ``N/A`` until it posts this report.
+    That year-ago figure is not the actual. Yahoo's number for this date wins; with no surprise
+    and no Yahoo actual, `eps_actual` stays empty.
     """
     rows = []
     for d in days:
@@ -122,12 +126,19 @@ def reports(http: Http, days: list[date], keep: set[str], min_cap: float) -> lis
         y = _yahoo_report(sym, d)
         timing = {"time-pre-market": "BMO", "time-after-hours": "AMC"}.get(r.get("time")) or y.get("timing") or "TBD"
         eps = _num(r.get("eps"))
-        eps = eps if eps is not None else y.get("eps_actual")
         est = _num(r.get("epsForecast"))
-        est = est if est is not None else y.get("eps_estimate")
+        if est is None:
+            est = y.get("eps_estimate")
         surprise = _num(r.get("surprise"))
-        if surprise is None:
+        if y.get("eps_actual") is not None:
+            # Nasdaq's `eps` is the year-ago print (surprise "N/A") until the row updates.
+            # Yahoo's earnings dates are the reported figure for this date.
+            eps = y["eps_actual"]
             surprise = y.get("surprise_pct")
+            if y.get("eps_estimate") is not None:
+                est = y["eps_estimate"]
+        elif surprise is None:
+            eps = None
         if surprise is None and eps is not None and est:
             surprise = (eps - est) / abs(est) * 100
         return {"date": d.isoformat(), "symbol": sym, "name": r.get("name", ""), "timing": timing,

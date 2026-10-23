@@ -40,7 +40,7 @@ export type CryptoData = {
 };
 
 export type CalendarData = {
-  earnings: {date: string; symbol: string; name: string; time: string}[];
+  earnings: {date: string; symbol: string; name: string; time: string; timeSub?: string}[];
   macro: {date: string; time: string; timeSub?: string; event: string; impact: string}[];
 };
 

@@ -345,7 +345,8 @@ const Calendar: React.FC<Ctx & {s: Extract<Scene, {type: 'calendar'}>}> = ({p, s
     <div style={{display: 'flex', gap: 36}}>
       <Panel title={p.labels.earnings} delay={8} style={{flex: 1.1}}>
         {s.data.earnings.slice(0, 9).map((e, i) => (
-          <Row key={i} delay={14 + i * 3} cells={[e.date.slice(5), e.symbol, e.name, e.time]} widths={[90, 110, 0, 70]} />
+          <Row key={i} delay={14 + i * 3} cells={[e.date.slice(5), e.symbol, e.name, e.time]}
+            widths={[80, 108, e.timeSub ? 168 : 0, e.timeSub ? 0 : 80]} sub={e.timeSub ? {3: e.timeSub} : undefined} />
         ))}
         {!s.data.earnings.length ? <div style={{color: C.sub, fontSize: 24}}>—</div> : null}
       </Panel>
